@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Toy project datasets and generated embedding/index caches (not source, not ours to redistribute)
+scratch/*/data/
+*.npy
+*.faiss
