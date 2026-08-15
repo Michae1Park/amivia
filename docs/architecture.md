@@ -111,7 +111,7 @@ to a few hundred plausible candidates, optimizing for recall over precision.
 
 **Technology:**
 - Dense embeddings (sentence-transformers) + vector similarity search — this is what
-  `scratch/embed_retrieve` already does
+  `scratch/candidate_generation/embed_retrieve` already does
 - At production scale: approximate nearest neighbor index (FAISS, HNSW), or a managed
   vector database (Pinecone, Weaviate, Qdrant, `pgvector` on Postgres) instead of
   brute-force dot product. This is the same infrastructure RAG pipelines and agent
@@ -125,7 +125,8 @@ to a few hundred plausible candidates, optimizing for recall over precision.
 
 ### 4. Filtering
 **Purpose:** enforce hard constraints that similarity search is bad at — negation,
-numeric thresholds, availability/eligibility. `scratch/embed_retrieve/batch_test.py`
+numeric thresholds, availability/eligibility.
+`scratch/candidate_generation/embed_retrieve/batch_test.py`
 already demonstrates the failure mode this layer exists to fix: embeddings conflate
 "no nightlife" with "vibrant nightlife," and don't reason about "under $50/day" at all.
 
@@ -156,7 +157,7 @@ popularity, seasonality).
 **Technology:**
 - Start simple: gradient-boosted trees (LightGBM/XGBoost) with a learning-to-rank
   objective (pairwise/listwise loss) over structured features — this is what
-  `scratch/rank_destinations` is scoped for
+  `scratch/ranking/rank_destinations` is scoped for
 - Progress to: a small feedforward DNN or two-tower model (user-tower +
   item-tower, dot product score) once there's enough interaction data to learn
   embeddings jointly
@@ -229,7 +230,11 @@ thumbs up/down) to improve the taste profile and, eventually, retrain the ranker
 
 ## Toy project roadmap
 
-Each project lives under `scratch/` and targets one layer in isolation, using small
+Each project lives under `scratch/` — grouped into `candidate_generation/`
+and `ranking/` subdirectories by classic-backbone funnel stage, and
+`llm_wrapper/` for the optional conversational layers, with
+`feedback_taste_profile` and the shared synthetic-data prerequisite at the
+`scratch/` root; see `scratch/README.md` for the exact layout and targets one layer in isolation, using small
 public (or, where noted, synthetic) datasets. The goal of each project is not just
 one working implementation — it's implementing several of the production algorithms
 used for that layer side by side, on the same data, so the differences in results,
@@ -239,18 +244,18 @@ optional LLM wrapper layers. Feel free to jump around.
 
 | # | Project | Layer | Algorithms to compare | Knobs to tune | Status |
 |---|---------|-------|------------------------|----------------|--------|
-| 1 | `embed_retrieve` | Candidate retrieval (embeddings) | Brute-force dot product (done) vs. FAISS IVF vs. HNSW vs. LSH | `nlist`/`nprobe` (IVF), `M`/`efConstruction`/`efSearch` (HNSW), embedding model choice | In progress — brute-force baseline done, ANN variants not yet built; `batch_test.py` surfaces negation/numeric failure modes |
-| 2 | `collab_filter` | Candidate retrieval (collaborative filtering) | Matrix factorization (ALS/SVD) vs. item-based neighborhood CF vs. implicit-feedback BPR, on synthetic user-item interactions | latent dimension, regularization strength, implicit vs. explicit feedback handling | Blocked on `synthetic_interactions` (below) |
-| 3 | `filter_constraints` | Filtering | N/A — deterministic predicate logic, not an algorithm-comparison layer | predicate strictness (hard-fail vs. soft-penalize a near-miss) | Not started — parse hard constraints out of a query and apply as predicates over Project 1's candidate set |
-| 4 | `rank_coarse` | Coarse ranking | Raw retrieval score baseline vs. logistic regression vs. shallow GBDT | feature set size, regularization/tree depth | Not started — measure how much of the precise ranker's top results survive coarse pruning, at what latency savings |
-| 5 | `rank_destinations` | Precise ranking (GBDT / LTR) | Pointwise regression vs. pairwise (LambdaMART) vs. listwise (LambdaRank/ListNet) objectives in LightGBM/XGBoost | `num_leaves`, learning rate, boosting rounds, objective function | Scaffolded — dataset chosen, no code yet |
-| 6 | `rank_two_tower` | Precise ranking (DNN / two-tower) | Two-tower DNN vs. Project 5's GBDT baseline | embedding dimension, negative sampling strategy (random / in-batch / hard negatives), tower depth | Blocked on `synthetic_interactions` (below) |
-| 7 | `rank_cross_encoder` | Precise ranking (transformer) | Cross-encoder re-scoring vs. two-tower (Project 6) vs. GBDT (Project 5) | model size, pair batch size | Not started — quality vs. latency tradeoff at the expensive end of ranking |
-| 8 | `rerank_diversity` | Reranking | MMR vs. determinantal point processes (DPP) vs. simple tag-bucketing | MMR's relevance/diversity tradeoff weight, DPP kernel choice | Not started — plot the diversity-vs-relevance tradeoff curve over Project 5/6/7's output |
+| 1 | `candidate_generation/embed_retrieve` | Candidate retrieval (embeddings) | Brute-force dot product (done) vs. FAISS IVF vs. HNSW vs. LSH | `nlist`/`nprobe` (IVF), `M`/`efConstruction`/`efSearch` (HNSW), embedding model choice | In progress — brute-force baseline done, ANN variants not yet built; `batch_test.py` surfaces negation/numeric failure modes |
+| 2 | `candidate_generation/collab_filter` | Candidate retrieval (collaborative filtering) | Matrix factorization (ALS/SVD) vs. item-based neighborhood CF vs. implicit-feedback BPR, on synthetic user-item interactions | latent dimension, regularization strength, implicit vs. explicit feedback handling | Blocked on `synthetic_interactions` (below) |
+| 3 | `candidate_generation/filter_constraints` | Filtering | N/A — deterministic predicate logic, not an algorithm-comparison layer | predicate strictness (hard-fail vs. soft-penalize a near-miss) | Not started — parse hard constraints out of a query and apply as predicates over Project 1's candidate set |
+| 4 | `ranking/rank_coarse` | Coarse ranking | Raw retrieval score baseline vs. logistic regression vs. shallow GBDT | feature set size, regularization/tree depth | Not started — measure how much of the precise ranker's top results survive coarse pruning, at what latency savings |
+| 5 | `ranking/rank_destinations` | Precise ranking (GBDT / LTR) | Pointwise regression vs. pairwise (LambdaMART) vs. listwise (LambdaRank/ListNet) objectives in LightGBM/XGBoost | `num_leaves`, learning rate, boosting rounds, objective function | Scaffolded — dataset chosen, no code yet |
+| 6 | `ranking/rank_two_tower` | Precise ranking (DNN / two-tower) | Two-tower DNN vs. Project 5's GBDT baseline | embedding dimension, negative sampling strategy (random / in-batch / hard negatives), tower depth | Blocked on `synthetic_interactions` (below) |
+| 7 | `ranking/rank_cross_encoder` | Precise ranking (transformer) | Cross-encoder re-scoring vs. two-tower (Project 6) vs. GBDT (Project 5) | model size, pair batch size | Not started — quality vs. latency tradeoff at the expensive end of ranking |
+| 8 | `ranking/rerank_diversity` | Reranking | MMR vs. determinantal point processes (DPP) vs. simple tag-bucketing | MMR's relevance/diversity tradeoff weight, DPP kernel choice | Not started — plot the diversity-vs-relevance tradeoff curve over Project 5/6/7's output |
 | 9 | `feedback_taste_profile` | Feedback loop / user understanding | Simple average of liked-item embeddings vs. recency-decay-weighted average vs. learned user-tower | decay rate, aggregation window | Blocked on `synthetic_interactions` (below) |
-| 10 | `intent_parsing` *(optional, LLM)* | Conversation layer / user understanding | N/A — LLM structured-output extraction | prompt/schema design, temperature | Not started — LLM structured-output extraction of intent JSON from free text |
-| 11 | `response_generation` *(optional, LLM)* | Response generation | N/A — grounded generation | prompt design, temperature | Not started — grounded natural-language generation over a fixed candidate list (this + Project 1 is a RAG pipeline) |
-| 12 | `tool_calling_agent` *(optional, LLM)* | Agent tooling | N/A — tool-calling integration | — | Not started — wire a mock MCP tool (e.g. live weather or price lookup) into the conversational flow to see the retrieve-then-act loop firsthand |
+| 10 | `llm_wrapper/intent_parsing` *(optional, LLM)* | Conversation layer / user understanding | N/A — LLM structured-output extraction | prompt/schema design, temperature | Not started — LLM structured-output extraction of intent JSON from free text |
+| 11 | `llm_wrapper/response_generation` *(optional, LLM)* | Response generation | N/A — grounded generation | prompt design, temperature | Not started — grounded natural-language generation over a fixed candidate list (this + Project 1 is a RAG pipeline) |
+| 12 | `llm_wrapper/tool_calling_agent` *(optional, LLM)* | Agent tooling | N/A — tool-calling integration | — | Not started — wire a mock MCP tool (e.g. live weather or price lookup) into the conversational flow to see the retrieve-then-act loop firsthand |
 
 Projects 3, 10, 11, and 12 are marked N/A for algorithm comparison because those
 layers are deterministic logic or LLM-prompting concerns rather than a choice between

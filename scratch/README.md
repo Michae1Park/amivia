@@ -10,20 +10,42 @@ technology notes, and the reasoning behind the ordering, see
 [`docs/architecture.md`](../docs/architecture.md). That document is the
 source of truth for the roadmap; this file just tracks status and links in.
 
+Projects are grouped into three directories: two by classic-backbone funnel
+stage, one for the optional LLM wrapper layers. `feedback_taste_profile`
+(feedback/user understanding) and the shared synthetic-data prerequisite
+don't fit any of the three and stay at the `scratch/` root.
+
+## `candidate_generation/` — retrieval + filtering
+
 | # | Project | Layer | Status |
 |---|---------|-------|--------|
-| 1 | [embed_retrieve](embed_retrieve/README.md) | Candidate retrieval (embeddings) | In progress — brute-force baseline done, ANN variants not yet built |
-| 2 | [collab_filter](collab_filter/README.md) | Candidate retrieval (collaborative filtering) | Blocked on `synthetic_interactions` |
-| 3 | [filter_constraints](filter_constraints/README.md) | Filtering | Not started |
-| 4 | [rank_coarse](rank_coarse/README.md) | Coarse ranking | Not started |
-| 5 | [rank_destinations](rank_destinations/README.md) | Precise ranking (GBDT / LTR) | Scaffolded — dataset chosen, no code yet |
-| 6 | [rank_two_tower](rank_two_tower/README.md) | Precise ranking (DNN / two-tower) | Blocked on `synthetic_interactions` |
-| 7 | [rank_cross_encoder](rank_cross_encoder/README.md) | Precise ranking (transformer) | Not started |
-| 8 | [rerank_diversity](rerank_diversity/README.md) | Reranking | Not started |
+| 1 | [embed_retrieve](candidate_generation/embed_retrieve/README.md) | Candidate retrieval (embeddings) | In progress — brute-force baseline done, ANN variants not yet built |
+| 2 | [collab_filter](candidate_generation/collab_filter/README.md) | Candidate retrieval (collaborative filtering) | Blocked on `synthetic_interactions` |
+| 3 | [filter_constraints](candidate_generation/filter_constraints/README.md) | Filtering | Not started |
+
+## `ranking/` — coarse, precise, and reranking
+
+| # | Project | Layer | Status |
+|---|---------|-------|--------|
+| 4 | [rank_coarse](ranking/rank_coarse/README.md) | Coarse ranking | Not started |
+| 5 | [rank_destinations](ranking/rank_destinations/README.md) | Precise ranking (GBDT / LTR) | Scaffolded — dataset chosen, no code yet |
+| 6 | [rank_two_tower](ranking/rank_two_tower/README.md) | Precise ranking (DNN / two-tower) | Blocked on `synthetic_interactions` |
+| 7 | [rank_cross_encoder](ranking/rank_cross_encoder/README.md) | Precise ranking (transformer) | Not started |
+| 8 | [rerank_diversity](ranking/rerank_diversity/README.md) | Reranking | Not started |
+
+## `scratch/` root — feedback, shared prerequisite
+
+| # | Project | Layer | Status |
+|---|---------|-------|--------|
 | 9 | [feedback_taste_profile](feedback_taste_profile/README.md) | Feedback loop / user understanding | Blocked on `synthetic_interactions` |
-| 10 | [intent_parsing](intent_parsing/README.md) *(optional, LLM)* | Conversation layer | Not started |
-| 11 | [response_generation](response_generation/README.md) *(optional, LLM)* | Response generation | Not started |
-| 12 | [tool_calling_agent](tool_calling_agent/README.md) *(optional, LLM)* | Agent tooling | Not started |
+
+## `llm_wrapper/` — optional conversational wrapper around the backbone
+
+| # | Project | Layer | Status |
+|---|---------|-------|--------|
+| 10 | [intent_parsing](llm_wrapper/intent_parsing/README.md) *(optional, LLM)* | Conversation layer | Not started |
+| 11 | [response_generation](llm_wrapper/response_generation/README.md) *(optional, LLM)* | Response generation | Not started |
+| 12 | [tool_calling_agent](llm_wrapper/tool_calling_agent/README.md) *(optional, LLM)* | Agent tooling | Not started |
 
 **Shared prerequisite:** [synthetic_interactions](synthetic_interactions/README.md)
 generates synthetic users, personas, and an impression/click/save
