@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-DATA_PATH = Path(__file__).parent / "data" / "Worldwide Travel Cities Dataset (Ratings and Climate).csv"
-EMBED_CACHE = Path(__file__).parent / "data" / "description_embeddings.npy"
+DATA_PATH = Path(__file__).parent.parent / "data" / "cities.csv"
+EMBED_CACHE = Path(__file__).parent.parent / "data" / "description_embeddings.npy"
 MODEL_NAME = "all-MiniLM-L6-v2"
 
 
