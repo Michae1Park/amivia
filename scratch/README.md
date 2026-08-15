@@ -1,19 +1,22 @@
 # Scratch: recsys toy projects
 
 Small, self-contained projects for learning the algorithms behind production
-recommendation/search pipelines, before wiring anything to an LLM. Each
-subfolder is independent: its own README (problem it solves, algorithms
-compared, knobs to tune), its own script(s), its own small dataset.
+recommendation/search pipelines, before wiring anything to an LLM.
+- Each subfolder is independent: its own README (problem it solves,
+  algorithms compared, knobs to tune), its own script(s), its own small
+  dataset
+- This is the working index — for the full pipeline diagram, per-layer
+  technology notes, and the reasoning behind the ordering, see
+  [`docs/architecture.md`](../docs/architecture.md). That document is the
+  source of truth for the roadmap; this file just tracks status and links in.
 
-This is the working index — for the full pipeline diagram, per-layer
-technology notes, and the reasoning behind the ordering, see
-[`docs/architecture.md`](../docs/architecture.md). That document is the
-source of truth for the roadmap; this file just tracks status and links in.
-
-Projects are grouped into three directories: two by classic-backbone funnel
-stage, one for the optional LLM wrapper layers. `feedback_taste_profile`
-(feedback/user understanding) and the shared synthetic-data prerequisite
-don't fit any of the three and stay at the `scratch/` root.
+Grouping:
+- `candidate_generation/`, `ranking/` — the two classic-backbone funnel
+  stages
+- `llm_wrapper/` — the optional LLM wrapper layers
+- `scratch/` root — `feedback_taste_profile` (feedback/user understanding)
+  and the shared synthetic-data prerequisite, which don't fit any of the
+  three
 
 ## `candidate_generation/` — retrieval + filtering
 
@@ -48,11 +51,12 @@ don't fit any of the three and stay at the `scratch/` root.
 | 12 | [tool_calling_agent](llm_wrapper/tool_calling_agent/README.md) *(optional, LLM)* | Agent tooling | Not started |
 
 **Shared prerequisite:** [synthetic_interactions](synthetic_interactions/README.md)
-generates synthetic users, personas, and an impression/click/save
-interaction log over the `embed_retrieve` city catalog. Projects 2, 6, and 9
-all need real user-item interaction history that the catalog-only datasets
-don't have, and consume this one shared log instead of each inventing their
-own. Build it before starting any of those three.
+- Generates synthetic users, personas, and an impression/click/save
+  interaction log over the `embed_retrieve` city catalog
+- Projects 2, 6, and 9 all need real user-item interaction history that the
+  catalog-only datasets don't have, and consume this one shared log instead
+  of each inventing their own
+- Build it before starting any of those three
 
 Projects 1-9 are the classic recsys backbone and work with no LLM at all —
 that's the learning priority. Projects 10-12 are an optional conversational
