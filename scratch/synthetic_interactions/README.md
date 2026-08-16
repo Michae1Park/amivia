@@ -93,4 +93,6 @@ is duplicated here.
 
 ## Status
 
-Design only — `generate.py` not yet written.
+Done — `generate.py` written and run with defaults (5,000 users,
+`data/users.csv` + `data/interactions.csv`): 450,852 impressions, 15.6% CTR,
+11.4% of clicks saved.
