@@ -50,6 +50,12 @@ Grouping:
 | 11 | [response_generation](llm_wrapper/response_generation/README.md) *(optional, LLM)* | Response generation | Not started |
 | 12 | [tool_calling_agent](llm_wrapper/tool_calling_agent/README.md) *(optional, LLM)* | Agent tooling | Not started |
 
+## `eval/` — offline metrics harness (cross-cutting)
+
+| # | Project | Layer | Status |
+|---|---------|-------|--------|
+| — | [eval](eval/README.md) | Cross-cutting (scores `collab_filter`, `rank_two_tower`, `feedback_taste_profile`) | Done — harness + random/popularity/oracle_persona baselines validated |
+
 **Shared prerequisite:** [synthetic_interactions](synthetic_interactions/README.md)
 - Generates synthetic users, personas, and an impression/click/save
   interaction log over the `embed_retrieve` city catalog
