@@ -4,7 +4,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "synthetic_interactions"))
-from generate import load_catalog, build_persona_weight_vectors, PERSONAS, CATALOG_PATH  # noqa: E402
+from generate import load_catalog, build_persona_weight_vectors, PERSONAS, TAGS, CATALOG_PATH  # noqa: E402
 
 SYN_DATA_DIR = Path(__file__).resolve().parent.parent / "synthetic_interactions" / "data"
 USERS_PATH = SYN_DATA_DIR / "users.csv"
@@ -21,6 +21,22 @@ def load_users(path: Path = USERS_PATH) -> list[dict]:
 def load_interactions(path: Path = INTERACTIONS_PATH) -> list[dict]:
     with open(path, newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
+
+
+def load_catalog_rows(path: Path = CATALOG_PATH) -> list[dict]:
+    """Catalog with city names kept — `generate.load_catalog` drops them, but the LLM
+    baseline needs something human-readable to reason over."""
+    with open(path, newline="", encoding="utf-8") as f:
+        return [
+            {
+                "id": row["id"],
+                "city": row["city"],
+                "country": row["country"],
+                "budget_level": row["budget_level"],
+                "tags": [int(row[t]) for t in TAGS],
+            }
+            for row in csv.DictReader(f)
+        ]
 
 
 def build_train_test_split(interactions: list[dict], test_fraction: float = 0.2):
