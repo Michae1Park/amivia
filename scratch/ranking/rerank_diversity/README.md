@@ -25,6 +25,24 @@ similarity signal between candidates).
 **Knobs to tune:** MMR's relevance/diversity tradeoff weight (λ), DPP kernel
 choice.
 
+## Experiment
+
+**Setup:** rerank top-50 → top-10 from Projects 5/6/7.
+
+**Conditions:** MMR (sweep λ ∈ [0,1]) · DPP (sweep kernel bandwidth) · tag/
+region bucketing (round-robin over buckets).
+
+**Metrics:** a *pair* per configuration — relevance (NDCG@10) and diversity
+(mean pairwise distance between selected items' tag vectors, plus count of
+distinct regions).
+
+**Interpretation:** the deliverable is the **Pareto frontier**, not a winning
+algorithm. Plot relevance against diversity across the sweep; the questions
+are which method dominates, and how much NDCG the knee costs. A single
+configuration's numbers are not a result here.
+
+**Results:** *not yet run.*
+
 **Status:** not yet implemented (README/design only). Goal is a plotted
 diversity-vs-relevance tradeoff curve over Project 5/6/7's output, not just
 one algorithm working.

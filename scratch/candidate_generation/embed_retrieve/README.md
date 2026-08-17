@@ -17,6 +17,8 @@ Layer: candidate retrieval (embeddings) — see `docs/architecture.md` §3.
   nightlife, cuisine, wellness, urban, seclusion)
 - Download the CSV and place it at:
   `data/Worldwide Travel Cities Dataset (Ratings and Climate).csv`
+- License: MIT (commercial use permitted, preserve the copyright notice) —
+  see `docs/roadmap-to-service.md` §Gap 8 for the caveats
 - This catalog is also the base dataset `synthetic_interactions` builds
   synthetic users/interactions on top of, and `filter_constraints` filters
   by its structured columns
@@ -66,6 +68,45 @@ for each so failure modes are visible side by side, not just described:
 - **Numeric constraints** — "under $50 a day" and "average July temperature
   above 30°C" aren't reasoned about at all; embeddings have no notion of
   thresholds. Another motivating example for `filter_constraints`.
+
+## Experiment
+
+**Setup:** 560 city descriptions embedded with `all-MiniLM-L6-v2`
+(384-dim, unit-normalised), so dot product == cosine. Brute force is the
+reference: its exact top-k *is* the ground truth the ANN variants are scored
+against.
+
+**Conditions:** brute force · FAISS IVF (sweep `nlist`, `nprobe`) · HNSW
+(sweep `M`, `efConstruction`, `efSearch`) · LSH (sweep bits, tables).
+
+**Metrics:** recall@10 against exact brute-force top-10; query latency p50/p95;
+index build time; index memory.
+
+**Interpretation:** at 560 items brute force is expected to win outright —
+which makes the *crossover point* the actual question, not the ranking at this
+size. Find it by replicating the catalog to ~10k / 100k / 1M synthetic items
+(perturbed copies of the real embeddings) and re-running the sweep, then report
+the catalog size at which each index overtakes brute force on latency at
+recall@10 ≥ 0.95. That extrapolation is what tells Phase 2 whether per-city
+POI retrieval needs an index.
+
+**Results — partial.** Retrieval quality is measured; the ANN sweep is not
+built.
+
+- Brute force returns topically sound candidates: paraphrases of one intent
+  ("relaxing beach vacation" / "chill seaside getaway") return heavily
+  overlapping sets.
+- Negation fails outright — *"quiet town, definitely no nightlife"* still
+  surfaces nightlife-heavy cities.
+- Numeric constraints are not reasoned about at all — *"under $50 a day"*,
+  *"July average above 30°C"*.
+
+**What the negation failure means:** it is representational, not a ranking
+wobble. "No nightlife" and "vibrant nightlife" sit close in embedding space
+because both are *about* nightlife, so no choice of `k` or embedding model
+fixes it. That is the whole justification for `filter_constraints` (Project 3)
+existing as a separate deterministic layer, and it is why the fix belongs
+outside the retriever rather than inside it.
 
 **Status:** in progress
 - Brute-force baseline: done

@@ -286,14 +286,14 @@ the optional LLM wrapper layers, though nothing stops jumping around.
 | # | Project | Layer | Algorithms to compare | Knobs to tune | Status |
 |---|---------|-------|------------------------|----------------|--------|
 | 1 | `candidate_generation/embed_retrieve` | Candidate retrieval (embeddings) | Brute-force dot product (done) vs. FAISS IVF vs. HNSW vs. LSH | `nlist`/`nprobe` (IVF), `M`/`efConstruction`/`efSearch` (HNSW), embedding model choice | In progress — brute-force baseline done, ANN variants not yet built; `batch_test.py` surfaces negation/numeric failure modes |
-| 2 | `candidate_generation/collab_filter` | Candidate retrieval (collaborative filtering) | Matrix factorization (ALS/SVD) vs. item-based neighborhood CF vs. implicit-feedback BPR, on synthetic user-item interactions | latent dimension, regularization strength, implicit vs. explicit feedback handling | Blocked on `synthetic_interactions` (below) |
+| 2 | `candidate_generation/collab_filter` | Candidate retrieval (collaborative filtering) | Matrix factorization (ALS/SVD) vs. item-based neighborhood CF vs. implicit-feedback BPR, on synthetic user-item interactions | latent dimension, regularization strength, implicit vs. explicit feedback handling | Unblocked, not started |
 | 3 | `candidate_generation/filter_constraints` | Filtering | N/A — deterministic predicate logic, not an algorithm-comparison layer | predicate strictness (hard-fail vs. soft-penalize a near-miss) | Not started — parse hard constraints out of a query and apply as predicates over Project 1's candidate set |
 | 4 | `ranking/rank_coarse` | Coarse ranking | Raw retrieval score baseline vs. logistic regression vs. shallow GBDT | feature set size, regularization/tree depth | Not started — measure how much of the precise ranker's top results survive coarse pruning, at what latency savings |
 | 5 | `ranking/rank_destinations` | Precise ranking (GBDT / LTR) | Pointwise regression vs. pairwise (LambdaMART) vs. listwise (LambdaRank/ListNet) objectives in LightGBM/XGBoost | `num_leaves`, learning rate, boosting rounds, objective function | Scaffolded — dataset chosen, no code yet |
-| 6 | `ranking/rank_two_tower` | Precise ranking (DNN / two-tower) | Two-tower DNN vs. Project 5's GBDT baseline | embedding dimension, negative sampling strategy (random / in-batch / hard negatives), tower depth | Blocked on `synthetic_interactions` (below) |
+| 6 | `ranking/rank_two_tower` | Precise ranking (DNN / two-tower) | Two-tower DNN vs. Project 5's GBDT baseline | embedding dimension, negative sampling strategy (random / in-batch / hard negatives), tower depth | Unblocked, not started |
 | 7 | `ranking/rank_cross_encoder` | Precise ranking (transformer) | Cross-encoder re-scoring vs. two-tower (Project 6) vs. GBDT (Project 5) | model size, pair batch size | Not started — quality vs. latency tradeoff at the expensive end of ranking |
 | 8 | `ranking/rerank_diversity` | Reranking | MMR vs. determinantal point processes (DPP) vs. simple tag-bucketing | MMR's relevance/diversity tradeoff weight, DPP kernel choice | Not started — plot the diversity-vs-relevance tradeoff curve over Project 5/6/7's output |
-| 9 | `feedback_taste_profile` | Feedback loop / user understanding | Simple average of liked-item embeddings vs. recency-decay-weighted average vs. learned user-tower | decay rate, aggregation window | Blocked on `synthetic_interactions` (below) |
+| 9 | `feedback_taste_profile` | Feedback loop / user understanding | Simple average of liked-item embeddings vs. recency-decay-weighted average vs. learned user-tower | decay rate, aggregation window | Unblocked, not started |
 | 10 | `llm_wrapper/intent_parsing` *(optional, LLM)* | Conversation layer / user understanding | N/A — LLM structured-output extraction | prompt/schema design, temperature | Not started — LLM structured-output extraction of intent JSON from free text |
 | 11 | `llm_wrapper/response_generation` *(optional, LLM)* | Response generation | N/A — grounded generation | prompt design, temperature | Not started — grounded natural-language generation over a fixed candidate list (this + Project 1 is a RAG pipeline) |
 | 12 | `llm_wrapper/tool_calling_agent` *(optional, LLM)* | Agent tooling | N/A — tool-calling integration | — | Not started — wire a mock MCP tool (e.g. live weather or price lookup) into the conversational flow to see the retrieve-then-act loop firsthand |
@@ -317,7 +317,9 @@ Projects 3, 10, 11, and 12 are marked N/A for algorithm comparison:
     popularity bias and exposure noise are present
   - Tunable knobs (persona mix purity, popularity skew, signal sparsity) —
     see that project's README for the full design
-- Build this before starting any of the three blocked projects above
+- **Built** (5,000 users, 450,852 impressions) — projects 2, 6, and 9 are unblocked
+- `scratch/eval/` scores anything built on it, and ships baselines to compare
+  against: random, popularity, an affinity oracle, and an opt-in zero-shot LLM
 
 Once each toy project has produced a working comparison:
 - Not just one algorithm working, but a felt sense of how each option
@@ -329,10 +331,17 @@ Once each toy project has produced a working comparison:
 
 ## Note: production infrastructure not covered here
 
-Deliberately out of scope for this learning project:
+Deliberately out of scope for **this document**, which plans the learning
+curriculum:
 - Feature store (online/offline feature parity)
 - A/B testing framework
 - Multi-objective ranking (engagement + revenue + diversity combined as
   weighted losses, rather than one relevance score)
 - Tool sandboxing/permissioning and auth for external API access (agent
   side)
+
+Some are picked up in [`roadmap-to-service.md`](roadmap-to-service.md), which
+asks what a complete, assembled version would need — including why online
+experimentation is built as a *demonstrated mechanism* rather than a source of
+statistically valid results. That document is the destination map; this one is
+the curriculum. **If you are deciding what to build next, follow this one.**
