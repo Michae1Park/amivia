@@ -42,6 +42,42 @@ not to represent real candidates:
   persisted, so this is an approximation, not a true ceiling). Persona
   labels are eval-only ground truth and never a real model's input — this
   exists purely to prove the harness can detect "near-ideal" behavior.
+- `LLMRecommender` *(opt-in, `--llm`)* — the whole 560-city catalog in the
+  prompt, the user's train history in the user turn, indices back out. No
+  training, no embeddings, no interaction matrix.
+
+## The LLM baseline
+
+**Why it's here:** at 560 items an LLM with the full catalog in context is a
+genuinely viable recommender, so it's the honest bar for the classic funnel
+to clear. It also marks where that stops being true — the approach dies as
+soon as the catalog outgrows the context window, which is the constraint the
+funnel exists to solve (see `docs/roadmap-to-service.md`).
+
+```
+pip install anthropic          # not currently in the venv
+export ANTHROPIC_API_KEY=...   # or: ant auth login
+
+python3 run_eval.py --llm --sample-users 200
+python3 run_eval.py --llm --sample-users 200 --llm-model claude-sonnet-5 --llm-effort medium
+```
+
+**Costs money per user**, so it is opt-in and effectively requires
+`--sample-users`. `--sample-users` subsamples *every* model identically —
+otherwise the LLM's numbers aren't comparable to the baselines it's meant to
+be measured against. Three things keep the bill down:
+
+- the catalog block (~7k tokens, identical for every user) is a cached prompt
+  prefix, so per-user input bills at ~10% of list rate
+- responses are memoised to `data/llm_cache.json` — re-runs are free
+- `prefetch()` makes one call to warm the cache, then fans out concurrently
+  (parallel requests sharing a prefix would all miss it otherwise)
+
+`run_eval.py` prints a token/cache summary after the metrics table so the
+cache hit rate is visible rather than assumed.
+
+**Read its score against `popularity`, not `random`** — the LLM ranks by
+inferred taste, so the exposure bias documented below applies to it in full.
 
 ## A finding worth keeping in mind, not a bug
 
@@ -78,3 +114,8 @@ Done — `metrics.py`, `data.py`, `baselines.py`, `run_eval.py` written and
 validated: `random` < `oracle_persona`/`popularity` as expected (harness
 discriminates), with the popularity-vs-oracle ordering above worth reading
 before trusting any future project's numbers at face value.
+
+`LLMRecommender` added and exercised offline (prompt construction, index
+validation, seen/duplicate filtering) — **not yet run against the API**: the
+`anthropic` SDK isn't installed in the venv and no credentials are set, so it
+has no scores in this README yet.
