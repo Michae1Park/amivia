@@ -1,22 +1,12 @@
 # Shared prerequisite: synthetic user-item interactions
 
-- Three toy projects need user-item interaction history that no public
-  dataset here provides: `collab_filter`, `rank_two_tower`, and
-  `feedback_taste_profile`
+- Three toy projects need user-item interaction history no public dataset
+  here provides: `collab_filter`, `rank_two_tower`, `feedback_taste_profile`.
 - This project generates that history once, as a shared resource all three
-  consume
-
-**Items:** the existing city catalog from
-`scratch/candidate_generation/embed_retrieve/data/Worldwide Travel Cities Dataset (Ratings and Climate).csv`
-(560 cities, each already tagged 1-5 on `culture`, `adventure`, `nature`,
-`beaches`, `nightlife`, `cuisine`, `wellness`, `urban`, `seclusion`, plus a
-`budget_level`).
-
-**Users/interactions:** synthetic, generated to have:
-- Real latent structure (so collaborative filtering / two-tower models have
-  something genuine to recover)
-- Realistic noise, sparsity, and popularity bias (so a naive approach
-  visibly underperforms and tuning knobs actually matter)
+  consume.
+- **Items:** the existing city catalog from `embed_retrieve` (560 cities, see
+  [`DATA.md`](DATA.md) for columns).
+- **Users/interactions:** synthetic, via [`generate.py`](generate.py).
 
 ## Personas
 
@@ -32,54 +22,42 @@ columns plus a `budget_level` preference:
 | Nature & Adventure | nature, adventure, seclusion | Budget/Mid-range |
 | Family Beach | beaches, wellness | Mid-range |
 
-- Persona labels are **ground truth for evaluation only** (e.g. "do the
-  embeddings a model learns actually cluster by persona?")
-- Never fed to a model as an input feature — that would defeat the point of
-  the exercise
+- **Ground truth for evaluation only** — e.g. "do the embeddings a model
+  learns actually cluster by persona?"
+- Never fed to a model as an input feature, or the exercise would be trivial.
 
-## User generation
+## Why it's built this way
 
-Each synthetic user:
-- Gets one primary persona (uniform random) and a small blend of a second persona
-  (`persona_mix_purity` controls how dominant the primary is, e.g. 0.7-0.9)
-- Gets individual idiosyncratic noise added to their effective weight vector, so
-  users aren't perfectly separable by persona alone
+Three design choices keep this a real test rather than something a model
+could solve by memorizing:
 
-- Deliberate: if users were pure, unmixed persona instances, recovering them
-  would be trivial pattern matching, not a real test of collaborative
-  filtering or two-tower training
-
-## Interaction generation
-
-Real interaction logs aren't "a list of things the user liked" — they're an
-exposure funnel, and what wasn't shown is different from what was shown but
-ignored. Modeling that distinction is the point:
-
-1. **Item popularity**: each item gets a popularity multiplier drawn from a power-law
-   distribution (`popularity_skew` knob controls the exponent) — some cities are just
-   more shown/visited regardless of fit, mirroring real popularity bias.
-2. **Impressions**: per session, sample ~10-20 items weighted by popularity (not
-   persona fit) — this is what a naive, non-personalized surface would have shown.
-3. **Clicks**: for each impression, roll a click with probability from
-   `sigmoid(affinity_score - threshold)`, where `affinity_score` is the dot product of
-   the user's effective weight vector and the item's tag vector, plus a budget-match
-   bonus.
-4. **Saves**: conditional on a click, roll a save with a smaller, stronger-signal
-   probability — gives a graded implicit-feedback strength (impression < click <
-   save) rather than flat binary labels.
-5. **Timestamps**: sessions are spread across a synthetic 2-year window per user, so
-   recency-decay experiments (`feedback_taste_profile`) have a real timeline to decay
-   over.
-
-## Output schema
-
-- `data/users.csv` — `user_id, primary_persona, secondary_persona, mix_weight`
-  (persona columns are eval-only ground truth, see above)
-- `data/interactions.csv` — `interaction_id, user_id, item_id, event_type
-  (impression|click|save), session_id, timestamp`
-
-`item_id` matches the `id` column in `embed_retrieve`'s catalog CSV — no item table
-is duplicated here.
+- **Users are persona blends, not pure instances.**
+  - Each user leans toward a primary persona, with a smaller weight from a
+    second (`persona_mix_purity` knob), plus individual noise.
+  - Pure, unmixed users would be trivial pattern matching, not a real test of
+    collaborative filtering.
+- **Interactions are an exposure funnel, not a list of "liked" items.**
+  - Impressions are sampled by item popularity alone.
+  - Clicks and saves are then rolled probabilistically from persona fit.
+  - This mirrors real logs, where what wasn't shown differs from what was
+    shown but ignored.
+  - It makes popularity bias a real confound to correct for, not an
+    assumption.
+  - Exact mechanics (affinity score, sigmoid, thresholds) are in
+    [`DATA.md`](DATA.md).
+- **The funnel carries graded signal and an explicit negative, not just
+  impression/click/save.**
+  - `dwell_seconds` on each click — longer for a better-fit item (same idea
+    as watch-time on Netflix/YouTube).
+  - A save can escalate to `itinerary_add` — a later, stronger commitment
+    (cart vs. purchase).
+  - A badly-mismatched impression can roll an explicit `not_interested`
+    instead of silent non-engagement.
+  - Each session logs a templated `query_text` plus any
+    `filter_budget_level` / `filter_required_tag` applied — intent signal for
+    `filter_constraints` / `intent_parsing`, separate from what was clicked.
+  - See `sessions.csv` and the new `interactions.csv` columns in
+    [`DATA.md`](DATA.md).
 
 ## Knobs (the point of making this synthetic)
 
@@ -94,5 +72,7 @@ is duplicated here.
 ## Status
 
 Done — `generate.py` written and run with defaults (5,000 users,
-`data/users.csv` + `data/interactions.csv`): 450,852 impressions, 15.6% CTR,
-11.4% of clicks saved.
+`data/users.csv` + `data/interactions.csv` + `data/sessions.csv`): 449,411
+impressions, 20.0% CTR (mean dwell 24s), 13.6% of clicks saved, 7.6% of saves
+escalate to `itinerary_add`, 1.0% of impressions get an explicit
+`not_interested`, 47.7% of sessions apply a query filter.
