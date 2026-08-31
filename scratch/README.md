@@ -41,16 +41,19 @@ validates an implementation, not a hypothesis about real travellers; and on
 this harness `popularity`, not `random`, is the bar to beat (see
 [`eval/`](eval/README.md) for why).
 
-`embed_retrieve` is the worked example — a partial result, honestly scoped, with
-the finding that motivated `filter_constraints`.
+The `candidate_generation/` trio are the worked examples. Each produced at least
+one result that contradicted the expectation written down before the run:
+`embed_retrieve`'s predicted crossover point didn't exist, `collab_filter`'s
+simplest model beat its three learned ones, and `filter_constraints` found that
+soft-penalising cannot reach zero violations at any setting.
 
 ## `candidate_generation/` — retrieval + filtering
 
 | # | Project | Layer | Status |
 |---|---------|-------|--------|
-| 1 | [embed_retrieve](candidate_generation/embed_retrieve/README.md) | Candidate retrieval (embeddings) | In progress — brute-force baseline done, ANN variants not yet built |
-| 2 | [collab_filter](candidate_generation/collab_filter/README.md) | Candidate retrieval (collaborative filtering) | Unblocked, not started |
-| 3 | [filter_constraints](candidate_generation/filter_constraints/README.md) | Filtering | Not started |
+| 1 | [embed_retrieve](candidate_generation/embed_retrieve/README.md) | Candidate retrieval (embeddings) | Done — brute force + IVF/HNSW/LSH swept to 1M; the index only earns its keep past ~100k |
+| 2 | [collab_filter](candidate_generation/collab_filter/README.md) | Candidate retrieval (collaborative filtering) | Done — all four models beat `popularity`; item-kNN wins, and the popularity-correlation diagnostic catches ALS collapsing into `popularity` at high reg |
+| 3 | [filter_constraints](candidate_generation/filter_constraints/README.md) | Filtering | Done — 79% of the unfiltered top-10 violates its query's constraint; hard-fail fixes it, soft-penalise provably cannot |
 
 ## `ranking/` — coarse, precise, and reranking
 

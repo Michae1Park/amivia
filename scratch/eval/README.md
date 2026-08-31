@@ -28,8 +28,20 @@ against).
 **Interface:** any recommender is just an object with
 `.recommend(user_id: str, k: int) -> list[item_id]`. `run_eval.py` scores
 whatever's registered in its `recommenders` dict — future projects
-(`collab_filter`, `rank_two_tower`, `feedback_taste_profile`) plug in by
-implementing that method and adding themselves there.
+(`rank_two_tower`, `feedback_taste_profile`) plug in by implementing that
+method and adding themselves there.
+
+`collab_filter` is the first project wired in this way:
+
+```
+python3 run_eval.py --cf                          # + item_knn, svd, als, bpr
+python3 run_eval.py --cf --cf-weighting binary    # binary instead of graded input
+```
+
+It loads that project's four models at their swept-best settings
+(`CF_BEST_PARAMS` in `run_eval.py`); the full grid and the interpretation live
+in `candidate_generation/collab_filter/README.md`. The import is lazy, so a
+bare `run_eval.py` run stays independent of it.
 
 **Baselines (`baselines.py`)** — built to sanity-check the harness itself,
 not to represent real candidates:
@@ -87,10 +99,15 @@ formula that generated the labels:
 
 ```
 model              k  hit_rate    recall      ndcg
-random             5    0.0173    0.0052    0.0043
-popularity         5    0.1975    0.0676    0.0619
-oracle_persona     5    0.0466    0.0150    0.0131
+random             5    0.0207    0.0053    0.0048
+popularity         5    0.1585    0.0473    0.0457
+oracle_persona     5    0.1029    0.0270    0.0276
 ```
+
+*(Numbers refreshed after `interactions.csv` was regenerated with dwell,
+`itinerary_add`, `not_interested` and session filters — the earlier table in
+this README predated that log and no longer reproduced. The ordering, and
+therefore the finding below, is unchanged.)*
 
 This is exposure bias, not a broken harness. In `synthetic_interactions`,
 *impressions* are sampled by popularity, not affinity — an item only gets a

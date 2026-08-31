@@ -2,6 +2,7 @@
 """Offline eval harness: scores a recommender's ranked top-K against held-out
 synthetic_interactions ground truth. See README.md for metric definitions and scope."""
 import argparse
+import sys
 
 import numpy as np
 
@@ -25,6 +26,15 @@ from data import (
 from metrics import hit_rate_at_k, ndcg_at_k, recall_at_k
 
 LLM_CACHE_PATH = Path(__file__).resolve().parent / "data" / "llm_cache.json"
+
+CF_DIR = Path(__file__).resolve().parent.parent / "candidate_generation" / "collab_filter"
+# Best config per model from that project's sweep — see its README for the full grid.
+CF_BEST_PARAMS = {
+    "item_knn": {"n_neighbors": 560},  # 560 == no truncation; the full matrix scored best
+    "svd": {"n_factors": 16},
+    "als": {"n_factors": 16, "reg": 10.0, "alpha": 1.0},
+    "bpr": {"n_factors": 64, "reg": 0.1},
+}
 
 
 def evaluate(recommender, test_relevance: dict, k_values: list[int]) -> dict:
@@ -55,6 +65,10 @@ def main():
                         help="evaluate on a random subsample of test users (all models see "
                              "the same sample). Required in practice for --llm, which costs "
                              "an API call per user.")
+    parser.add_argument("--cf", action="store_true",
+                        help="add candidate_generation/collab_filter's four models at their "
+                             "swept-best settings (see that project's README)")
+    parser.add_argument("--cf-weighting", default="confidence", choices=["binary", "confidence"])
     parser.add_argument("--llm", action="store_true",
                         help="add the zero-shot LLM baseline (needs `pip install anthropic` "
                              "and credentials; costs money per uncached user)")
@@ -83,6 +97,19 @@ def main():
         "popularity": PopularityRecommender(train, item_ids, train_seen),
         "oracle_persona": OraclePersonaRecommender(users, item_ids, item_tags, item_budgets, train_seen),
     }
+    if args.cf:
+        # Imported lazily: the CF models live in another project and pull in scipy,
+        # so a bare `run_eval.py` run stays independent of them.
+        sys.path.insert(0, str(CF_DIR))
+        from models import MODELS, build_matrix
+
+        matrix, user_index = build_matrix(train, item_ids, args.cf_weighting)
+        for name, params in CF_BEST_PARAMS.items():
+            recommenders[name] = MODELS[name](
+                matrix, user_index, item_ids, train_seen,
+                random_state=args.random_seed, **params
+            )
+
     llm = None
     if args.llm:
         llm = LLMRecommender(
