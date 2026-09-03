@@ -33,7 +33,7 @@ def search(query: str, model: SentenceTransformer, cities: list[dict], embedding
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Embedding-based candidate retrieval over travel cities")
+    parser = argparse.ArgumentParser(description="Content-based candidate retrieval over travel cities")
     parser.add_argument("query", nargs="?", help="Free-text travel query")
     parser.add_argument("-k", type=int, default=5, help="Number of candidates to return")
     args = parser.parse_args()

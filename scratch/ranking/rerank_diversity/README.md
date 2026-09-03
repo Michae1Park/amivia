@@ -10,7 +10,7 @@ closed-for-season destinations) and exploration (occasionally surface a
 lower-scored but novel item to gather feedback).
 
 **Data:** a ranked candidate list from Project 5/6/7, plus the city
-description embeddings already cached by `embed_retrieve` (used as the
+description embeddings already cached by `content_filter` (used as the
 similarity signal between candidates).
 
 **Algorithms to compare:**

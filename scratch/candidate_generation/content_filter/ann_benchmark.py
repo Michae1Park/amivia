@@ -27,7 +27,7 @@ import faiss
 import numpy as np
 from threadpoolctl import threadpool_limits
 
-from embed_retrieve import DATA_PATH, EMBED_CACHE, MODEL_NAME, load_cities
+from content_filter import DATA_PATH, EMBED_CACHE, MODEL_NAME, load_cities
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 RESULTS_PATH = DATA_DIR / "ann_benchmark.csv"
@@ -147,7 +147,7 @@ def percentiles(latencies_s: list[float]) -> tuple[float, float]:
 
 
 def time_brute_force(corpus: np.ndarray, queries: np.ndarray, k: int) -> tuple[list[float], np.ndarray]:
-    """What embed_retrieve.py ships today: a full dot product, one query at a time."""
+    """What content_filter.py ships today: a full dot product, one query at a time."""
     retrieved = np.empty((len(queries), k), dtype=np.int64)
     latencies = []
     with threadpool_limits(limits=1):

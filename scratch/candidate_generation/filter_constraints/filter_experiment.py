@@ -2,7 +2,7 @@
 """Does filtering after retrieval actually fix the negation/numeric failures, and
 what does it cost?
 
-Three conditions over embed_retrieve's top-100 candidates:
+Three conditions over content_filter's top-100 candidates:
   no_filter     - what the retriever returns today
   hard_fail     - drop every candidate violating a constraint
   soft_penalty  - demote violators by a fixed margin instead of dropping them
@@ -17,8 +17,8 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "embed_retrieve"))
-from embed_retrieve import DATA_PATH, EMBED_CACHE, MODEL_NAME, load_cities  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "content_filter"))
+from content_filter import DATA_PATH, EMBED_CACHE, MODEL_NAME, load_cities  # noqa: E402
 
 from constraints import (  # noqa: E402
     LABELLED_QUERIES,
@@ -46,7 +46,7 @@ def get_embeddings(cities):
 
 
 def retrieve(query_vec, cities, embeddings, n):
-    """embed_retrieve's brute-force retrieval: the candidate set this layer filters."""
+    """content_filter's brute-force retrieval: the candidate set this layer filters."""
     scores = embeddings @ query_vec
     top = np.argsort(-scores)[:n]
     return [(cities[i], float(scores[i])) for i in top]

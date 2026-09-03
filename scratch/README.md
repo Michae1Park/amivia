@@ -43,7 +43,7 @@ this harness `popularity`, not `random`, is the bar to beat (see
 
 The `candidate_generation/` trio are the worked examples. Each produced at least
 one result that contradicted the expectation written down before the run:
-`embed_retrieve`'s predicted crossover point didn't exist, `collab_filter`'s
+`content_filter`'s predicted crossover point didn't exist, `collab_filter`'s
 simplest model beat its three learned ones, and `filter_constraints` found that
 soft-penalising cannot reach zero violations at any setting.
 
@@ -51,7 +51,7 @@ soft-penalising cannot reach zero violations at any setting.
 
 | # | Project | Layer | Status |
 |---|---------|-------|--------|
-| 1 | [embed_retrieve](candidate_generation/embed_retrieve/README.md) | Candidate retrieval (embeddings) | Done — brute force + IVF/HNSW/LSH swept to 1M; the index only earns its keep past ~100k |
+| 1 | [content_filter](candidate_generation/content_filter/README.md) | Candidate retrieval (embeddings) | Done — brute force + IVF/HNSW/LSH swept to 1M; the index only earns its keep past ~100k |
 | 2 | [collab_filter](candidate_generation/collab_filter/README.md) | Candidate retrieval (collaborative filtering) | Done — all four models beat `popularity`; item-kNN wins, and the popularity-correlation diagnostic catches ALS collapsing into `popularity` at high reg |
 | 3 | [filter_constraints](candidate_generation/filter_constraints/README.md) | Filtering | Done — 79% of the unfiltered top-10 violates its query's constraint; hard-fail fixes it, soft-penalise provably cannot |
 
@@ -88,7 +88,7 @@ soft-penalising cannot reach zero violations at any setting.
 **Shared prerequisite:** [synthetic_interactions](synthetic_interactions/README.md)
 — **built**, so projects 2, 6, and 9 are unblocked.
 - Generates synthetic users, personas, and an impression/click/save
-  interaction log over the `embed_retrieve` city catalog
+  interaction log over the `content_filter` city catalog
 - Projects 2, 6, and 9 all need user-item interaction history that the
   catalog-only datasets don't have, and consume this one shared log instead
   of each inventing their own

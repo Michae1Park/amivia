@@ -9,7 +9,7 @@ results per project. This harness is the shared scorer.
 
 **Scope:** ground truth here is keyed by `user_id` (from
 `synthetic_interactions`), so it fits `collab_filter`, `rank_two_tower`, and
-`feedback_taste_profile` directly. `embed_retrieve` takes a free-text query,
+`feedback_taste_profile` directly. `content_filter` takes a free-text query,
 not a user, so it isn't scored here — it stays on `batch_test.py`'s
 qualitative checks until there's a query-to-user mapping worth designing.
 

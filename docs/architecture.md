@@ -130,7 +130,7 @@ for recall over precision.
 
 **Technology:**
 - Dense embeddings (sentence-transformers) + vector similarity search — this
-  is what `scratch/candidate_generation/embed_retrieve` already does
+  is what `scratch/candidate_generation/content_filter` already does
 - At production scale: approximate nearest neighbor index (FAISS, HNSW), or
   a managed vector database (Pinecone, Weaviate, Qdrant, `pgvector` on
   Postgres) instead of brute-force dot product. This is the same
@@ -147,7 +147,7 @@ for recall over precision.
 ### 4. Filtering
 **Purpose:** enforce hard constraints that similarity search is bad at —
 negation, numeric thresholds, availability/eligibility.
-`scratch/candidate_generation/embed_retrieve/batch_test.py` already
+`scratch/candidate_generation/content_filter/batch_test.py` already
 demonstrates the failure mode this layer exists to fix: embeddings conflate
 "no nightlife" with "vibrant nightlife," and don't reason about "under
 $50/day" at all.
@@ -285,7 +285,7 @@ the optional LLM wrapper layers, though nothing stops jumping around.
 
 | # | Project | Layer | Algorithms to compare | Knobs to tune | Status |
 |---|---------|-------|------------------------|----------------|--------|
-| 1 | `candidate_generation/embed_retrieve` | Candidate retrieval (embeddings) | Brute-force dot product vs. FAISS IVF vs. HNSW vs. LSH | `nlist`/`nprobe` (IVF), `M`/`efConstruction`/`efSearch` (HNSW), embedding model choice | **Done** — swept to 1M. An index only earns its keep past ~100k, where search finally costs more than the 9.6 ms query-embedding call; IVF wins, LSH fails outright. `batch_test.py` surfaces negation/numeric failure modes |
+| 1 | `candidate_generation/content_filter` | Candidate retrieval (embeddings) | Brute-force dot product vs. FAISS IVF vs. HNSW vs. LSH | `nlist`/`nprobe` (IVF), `M`/`efConstruction`/`efSearch` (HNSW), embedding model choice | **Done** — swept to 1M. An index only earns its keep past ~100k, where search finally costs more than the 9.6 ms query-embedding call; IVF wins, LSH fails outright. `batch_test.py` surfaces negation/numeric failure modes |
 | 2 | `candidate_generation/collab_filter` | Candidate retrieval (collaborative filtering) | Matrix factorization (ALS/SVD) vs. item-based neighborhood CF vs. implicit-feedback BPR, on synthetic user-item interactions | latent dimension, regularization strength, implicit vs. explicit feedback handling | **Done** — all four beat `popularity` (item-kNN +60%, the simplest model winning); confidence-vs-binary weighting is a null result; over-regularised ALS collapses onto `popularity` at ρ=0.95 |
 | 3 | `candidate_generation/filter_constraints` | Filtering | N/A — deterministic predicate logic, not an algorithm-comparison layer | predicate strictness (hard-fail vs. soft-penalize a near-miss) | **Done** — 79% of the unfiltered top-10 violates its query's own constraint. Hard-fail drives that to zero; soft-penalise *provably cannot* reach zero, since demotion reorders a list but cannot shorten it |
 | 4 | `ranking/rank_coarse` | Coarse ranking | Raw retrieval score baseline vs. logistic regression vs. shallow GBDT | feature set size, regularization/tree depth | Not started — measure how much of the precise ranker's top results survive coarse pruning, at what latency savings |
@@ -310,7 +310,7 @@ Projects 3, 10, 11, and 12 are marked N/A for algorithm comparison:
 - `scratch/synthetic_interactions/` is a shared prerequisite that generates
   this once for all three:
   - Synthetic users built from a handful of hidden "traveler persona"
-    preference vectors over `embed_retrieve`'s existing tag columns
+    preference vectors over `content_filter`'s existing tag columns
     (culture, adventure, nature, beaches, nightlife, cuisine, wellness,
     urban, seclusion)
   - An impression → click → save funnel (not just raw positive pairs), so

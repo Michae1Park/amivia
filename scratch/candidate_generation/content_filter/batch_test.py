@@ -7,7 +7,7 @@ stability, or as a single phrasing to probe a specific failure mode
 """
 from sentence_transformers import SentenceTransformer
 
-from embed_retrieve import DATA_PATH, MODEL_NAME, get_embeddings, load_cities, search
+from content_filter import DATA_PATH, MODEL_NAME, get_embeddings, load_cities, search
 
 QUERY_GROUPS = [
     ("paraphrase: beach relaxation", [

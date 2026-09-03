@@ -2,13 +2,13 @@
 
 Layer: candidate retrieval (collaborative filtering) — see `docs/architecture.md` §3.
 
-**Problem:** `embed_retrieve` retrieves cities by matching content (descriptions)
+**Problem:** `content_filter` retrieves cities by matching content (descriptions)
 to a query. It has no notion of "travelers with taste similar to yours liked
 these other cities" — the other major candidate-generation signal production
 systems run in parallel with content-based retrieval.
 
 **Data:** `scratch/synthetic_interactions` — synthetic users, personas, and an
-impression/click/save interaction log built on top of `embed_retrieve`'s city
+impression/click/save interaction log built on top of `content_filter`'s city
 catalog. **Built and ready** — 5,000 users, 450,852 impressions.
 
 **Algorithms to compare:**

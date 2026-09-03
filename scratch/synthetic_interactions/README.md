@@ -4,7 +4,7 @@
   here provides: `collab_filter`, `rank_two_tower`, `feedback_taste_profile`.
 - This project generates that history once, as a shared resource all three
   consume.
-- **Items:** the existing city catalog from `embed_retrieve` (560 cities, see
+- **Items:** the existing city catalog from `content_filter` (560 cities, see
   [`DATA.md`](DATA.md) for columns).
 - **Users/interactions:** synthetic, via [`generate.py`](generate.py).
 

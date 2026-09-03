@@ -64,7 +64,7 @@ funnel — sharing one taste profile and intent.
 
 | # | Entity | Status | Why it earns a place |
 |---|---|---|---|
-| 1 | **Cities** | Built (`embed_retrieve`) | Rich features, MIT-licensed, real preference variance |
+| 1 | **Cities** | Built (`content_filter`) | Rich features, MIT-licensed, real preference variance |
 | 2 | **When to go** (city × month) | Proposed | Nearly free — uses climate data already in `cities.csv` |
 | 3 | **Neighborhoods / areas** | Proposed | The honest answer to "more specific destinations" |
 | 4 | **Attractions / things to do** | Proposed | Good catalog coverage, notability signal recoverable |
@@ -142,7 +142,7 @@ specific than which city, the LLM has no real POIs to ground in — so it
 invents plausible-sounding restaurants. That is the most user-visible failure
 mode available to this system.
 
-Same lesson `embed_retrieve/batch_test.py` surfaced one level down:
+Same lesson `content_filter/batch_test.py` surfaced one level down:
 embeddings can't do negation or numeric thresholds, so a deterministic layer
 was added. The LLM can't be trusted with facts it wasn't handed, so the facts
 have to exist first.

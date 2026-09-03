@@ -2,5 +2,5 @@ numpy>=1.26
 scipy>=1.11
 sentence-transformers>=3.0
 anthropic>=0.34
-faiss-cpu>=1.8          # embed_retrieve ANN sweep: IVF, HNSW and LSH all come from faiss
+faiss-cpu>=1.8          # content_filter ANN sweep: IVF, HNSW and LSH all come from faiss
 implicit>=0.7           # collab_filter: reference ALS/BPR, used only to check the hand-rolled ones

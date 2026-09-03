@@ -9,7 +9,7 @@ import sys
 
 import numpy as np
 
-from embed_retrieve import DATA_PATH, EMBED_CACHE, load_cities
+from content_filter import DATA_PATH, EMBED_CACHE, load_cities
 
 COLS = 32  # dims per row in the heatmap
 
@@ -75,7 +75,7 @@ def main():
     COLS = args.cols
 
     if not EMBED_CACHE.exists():
-        sys.exit(f"No cached embeddings at {EMBED_CACHE} — run embed_retrieve.py once to build it")
+        sys.exit(f"No cached embeddings at {EMBED_CACHE} — run content_filter.py once to build it")
 
     cities = load_cities(DATA_PATH)
     embeddings = np.load(EMBED_CACHE)

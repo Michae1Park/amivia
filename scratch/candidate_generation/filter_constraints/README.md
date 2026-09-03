@@ -3,12 +3,12 @@
 Layer: filtering — see `docs/architecture.md` §4.
 
 **Problem:** similarity search is bad at negation and numeric thresholds —
-`embed_retrieve/batch_test.py` already shows embeddings conflating "no
+`content_filter/batch_test.py` already shows embeddings conflating "no
 nightlife" with "vibrant nightlife," and having no notion of "under
 $50/day" at all. This layer enforces those hard constraints deterministically
 after retrieval, instead of hoping the embedding model learns them.
 
-**Data:** Project 1's (`embed_retrieve`) candidate output, plus its
+**Data:** Project 1's (`content_filter`) candidate output, plus its
 structured columns (budget_level, tags) to filter on.
 
 **Algorithm/tech:** not an algorithm-comparison layer — plain structured
@@ -40,7 +40,7 @@ rather than being implied by the code.
 
 Not an algorithm comparison — but the strictness knob is measurable.
 
-**Setup:** `embed_retrieve` top-100 candidates for `batch_test.py`'s negation
+**Setup:** `content_filter` top-100 candidates for `batch_test.py`'s negation
 and numeric probe queries, each with a hand-labelled constraint.
 
 **Conditions:** no filter (baseline) · hard-fail · soft-penalise (demote by a
@@ -114,7 +114,7 @@ travel on a budget, no beaches". Filtering *after* retrieval can only remove;
 it cannot go find the qualifying cities that ranked 300th. A production system
 pushes hard predicates down into retrieval (a pre-filtered ANN search, or a
 metadata index queried first) rather than applying them as a post-pass. That is
-a concrete argument for wiring this layer into `embed_retrieve` rather than
+a concrete argument for wiring this layer into `content_filter` rather than
 bolting it on afterwards — and it is invisible if you only look at the
 violation-rate column.
 

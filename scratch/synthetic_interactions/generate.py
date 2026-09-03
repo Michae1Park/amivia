@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate synthetic users and an interaction log (impression, click, save,
 itinerary_add, not_interested) plus a per-session query/filter log, over the
-embed_retrieve city catalog. See README.md for the full design.
+content_filter city catalog. See README.md for the full design.
 """
 import argparse
 import csv

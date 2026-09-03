@@ -1,7 +1,7 @@
 """Hard-constraint predicates over the city catalog, plus the hand-labelled probe set.
 
 Deliberately boring: structured predicate logic, no ML. The point of this layer is
-that `embed_retrieve` cannot express "no nightlife" or "under $50/day" at all —
+that `content_filter` cannot express "no nightlife" or "under $50/day" at all —
 those failures are representational, not a ranking wobble, so they get fixed
 outside the retriever rather than by tuning it.
 

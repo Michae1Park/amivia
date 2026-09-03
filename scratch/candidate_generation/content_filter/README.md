@@ -1,4 +1,4 @@
-# Project 1: Embedding-based candidate retrieval
+# Project 1: Content-based candidate retrieval
 
 Layer: candidate retrieval (embeddings) — see `docs/architecture.md` §3.
 
@@ -30,9 +30,9 @@ pip install sentence-transformers numpy
 
 **Usage:**
 ```
-python3 embed_retrieve.py "your travel query"
-python3 embed_retrieve.py "your travel query" -k 10   # return top 10 instead of top 5
-python3 embed_retrieve.py                              # prompts for a query interactively
+python3 content_filter.py "your travel query"
+python3 content_filter.py "your travel query" -k 10   # return top 10 instead of top 5
+python3 content_filter.py                              # prompts for a query interactively
 
 python3 batch_test.py                                  # fixed probe queries, all failure modes
 python3 ann_benchmark.py                               # the full ANN sweep (~25 min, writes a CSV)
@@ -46,7 +46,7 @@ python3 ann_benchmark.py --max-size 10000              # quick version
 
 **Algorithms to compare:**
 - Brute-force dot product over the full embedding matrix — **done**, this is
-  what `embed_retrieve.py` currently does (embeddings are unit-normalized,
+  what `content_filter.py` currently does (embeddings are unit-normalized,
   so dot product == cosine similarity)
 - FAISS IVF (inverted-file index) — **done** (`ann_benchmark.py`)
 - HNSW (hierarchical navigable small world graph) — **done**

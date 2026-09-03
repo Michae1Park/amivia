@@ -16,7 +16,7 @@ Kaggle dataset. Every other file below joins to this one via `id`.
 | `id` | UUID string | Primary key. This is what `interactions.csv.item_id` refers to. |
 | `city`, `country` | string | Display name. |
 | `region` | enum | One of `europe, asia, north_america, south_america, africa, oceania, middle_east`. |
-| `short_description` | text | Free-text blurb — the field `embed_retrieve` embeds. |
+| `short_description` | text | Free-text blurb — the field `content_filter` embeds. |
 | `latitude`, `longitude` | float | Standard decimal degrees. |
 | `avg_temp_monthly` | JSON string | `{"1": {"avg": 3.7, "max": 7.8, "min": 0.4}, ..., "12": {...}}` — keys `"1"`-`"12"` are calendar months, values are °C. |
 | `ideal_durations` | JSON string (list) | Subset of `["Day trip", "Weekend", "Short trip", "One week", "Long trip"]` — a city can have several. |
