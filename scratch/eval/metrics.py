@@ -12,6 +12,13 @@ def recall_at_k(recommended: list[str], relevant: dict[str, int], k: int) -> flo
     return hits / len(relevant)
 
 
+def precision_at_k(recommended: list[str], relevant: dict[str, int], k: int) -> float | None:
+    if not relevant:
+        return None
+    hits = sum(1 for item in recommended[:k] if item in relevant)
+    return hits / k
+
+
 def dcg_at_k(recommended: list[str], relevant: dict[str, int], k: int) -> float:
     return sum(
         relevant.get(item, 0) / math.log2(rank + 2)
