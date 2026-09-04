@@ -37,6 +37,7 @@ python3 content_filter.py                              # prompts for a query int
 python3 batch_test.py                                  # fixed probe queries, all failure modes
 python3 ann_benchmark.py                               # the full ANN sweep (~25 min, writes a CSV)
 python3 ann_benchmark.py --max-size 10000              # quick version
+python3 relevance_eval.py                              # recall/precision/ndcg vs. tag-grounded ground truth
 ```
 - First run embeds all 560 descriptions with `all-MiniLM-L6-v2` and caches
   the result to `data/description_embeddings.npy`; later runs load the
@@ -109,6 +110,48 @@ POI retrieval needs an index.
 `filter_constraints` (Project 3) has since quantified this: **79% of the
 unfiltered top-10 violates the query's own stated constraint**, and for *"quiet
 town, definitely no nightlife"* it is 10 out of 10.
+
+## Results — relevance eval (tag-grounded ground truth)
+
+`relevance_eval.py` puts a number on the above using deterministic ground
+truth instead of eyeballing: for each of `filter_constraints`'s
+`LABELLED_QUERIES`, "relevant" = every catalog city satisfying that query's
+hand-labelled predicates (e.g. `nightlife<=2` for *"quiet town, definitely no
+nightlife"*). This only grades the tag/budget/temperature semantics those
+predicates capture, not free-text nuance the catalog has no column for (e.g.
+"romantic") — `synthetic_interactions`' clicks can't fill that gap either,
+since they're generated from the same 9 tag columns, not from description text.
+
+| model | k | hit_rate | recall | precision | ndcg |
+|---|---|---|---|---|---|
+| embedding | 5 | 0.533 | 0.012 | 0.240 | 0.220 |
+| embedding | 10 | 0.667 | 0.018 | 0.207 | 0.204 |
+| embedding | 20 | 0.933 | 0.041 | 0.227 | 0.221 |
+| embedding | 50 | 0.933 | 0.109 | 0.224 | 0.233 |
+| random | 5 | 0.800 | 0.013 | 0.320 | 0.312 |
+| random | 10 | 0.867 | 0.022 | 0.267 | 0.276 |
+| random | 20 | 0.933 | 0.040 | 0.263 | 0.270 |
+| random | 50 | 0.933 | 0.097 | 0.259 | 0.270 |
+
+**Embedding retrieval loses to random on every metric at every k.** Spot
+checking confirms it's real, not a scoring bug: top-5 for *"quiet town,
+definitely no nightlife"* is Mumbai, São Paulo, Belgrade, Tampa, Reykjavík —
+nightlife rated 3-5, the exact opposite of what was asked — and top-5 for
+*"under $50 a day"* mixes Luxury, Mid-range, and Budget cities roughly evenly,
+since price never appears in the description text at all.
+
+**Read this result as confirmation, not a new finding.** `LABELLED_QUERIES`
+was built specifically to probe the negation/numeric blind spots above — it's
+an adversarial set by construction, not a representative sample of "typical"
+queries. This eval quantifies exactly the gap `filter_constraints` already
+exists to close, on the same 15 queries that motivated it; it isn't evidence
+that embedding retrieval is broken in general, only that it is exactly as
+blind to negation and numeric thresholds as the qualitative check already
+showed. Relevant-set sizes range from 12 to 484 out of 560 (see
+`relevance_eval.py`'s full output) — the 484-city query (`budget <= Mid-range`,
+86% of the catalog) makes hit_rate/recall structurally close to 1.0/saturated
+for *any* ranking, embedding or random, which is why precision and ndcg are
+the more informative columns for that query specifically.
 
 ## Results — ANN sweep
 
@@ -233,6 +276,11 @@ outside the retriever rather than inside it.
 - ANN variants (FAISS IVF, HNSW, LSH): done — `ann_benchmark.py`, swept to 1M
 - `batch_test.py`: done, the tool for eyeballing negation/numeric/paraphrase
   failure modes
+- `relevance_eval.py`: done — recall/precision/ndcg@k against tag-grounded
+  ground truth, quantifying the negation/numeric failure modes above
 - Not covered: product quantization (IVFPQ), the one option that would cut
   memory without LSH's recall collapse — worth a follow-up if footprint ever
   becomes the binding constraint rather than latency.
+- Not covered: free-text nuance the catalog's tag columns don't capture (e.g.
+  "romantic", "family-friendly") — no ground truth in this repo grades that;
+  would need human-labelled or LLM-judged relevance, not tag-derived rules.
