@@ -5,9 +5,7 @@ Group queries as multiple phrasings of the same intent to check paraphrase
 stability, or as a single phrasing to probe a specific failure mode
 (negation, numeric constraints, etc).
 """
-from sentence_transformers import SentenceTransformer
-
-from content_filter import DATA_PATH, MODEL_NAME, get_embeddings, load_cities, search
+from content_filter import DATA_PATH, get_embeddings, load_cities, load_model, search
 
 QUERY_GROUPS = [
     ("paraphrase: beach relaxation", [
@@ -52,7 +50,7 @@ def run_group(label, queries, model, cities, embeddings):
 
 def main():
     cities = load_cities(DATA_PATH)
-    model = SentenceTransformer(MODEL_NAME)
+    model = load_model()
     embeddings = get_embeddings(model, cities)
 
     for label, queries in QUERY_GROUPS:
