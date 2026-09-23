@@ -134,6 +134,8 @@ pattern from Part c, now driven by sparsity instead of over-regularization?
 
 ## Deliverables
 
+Fill these in as you go in [`DELIVERABLES.md`](DELIVERABLES.md) — a template with every question and table already laid out, so you're writing answers, not reformatting.
+
 1. Your own answer to each of the seven questions above, in your own numbers
 2. The full-grid table from Part b: best config per model, against `random`/`popularity`
 3. The config you found in Part c that "wins" on NDCG while its `pop_rho` gives away that it's collapsed toward popularity, and why that combination is misleading if read from NDCG alone

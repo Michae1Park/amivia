@@ -112,6 +112,8 @@ different kind of signal entirely)?
 
 ## Deliverables
 
+Fill these in as you go in [`DELIVERABLES.md`](DELIVERABLES.md) — a template with every question and table already laid out, so you're writing answers, not reformatting.
+
 1. Your own answer to each of the six questions above, in your own numbers
 2. The full condition table from Part b (no-filter, hard-fail, and the
    soft-penalty sweep), with violation rate, retention, mean score, n returned

@@ -172,6 +172,8 @@ the ID score, the OOD score, both, or neither?
 
 ## Deliverables
 
+Fill these in as you go in [`DELIVERABLES.md`](DELIVERABLES.md) — a template with every question and table already laid out, so you're writing answers, not reformatting.
+
 1. Your own answer to each of the eleven questions above, in your own numbers
 2. The recall/p50/p95/build/memory table for brute force vs. IVF vs. HNSW vs.
    LSH, at whatever sizes you ran
