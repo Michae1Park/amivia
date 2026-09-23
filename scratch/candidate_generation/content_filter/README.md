@@ -1,286 +1,230 @@
 # Project 1: Content-based candidate retrieval
 
 Layer: candidate retrieval (embeddings) — see `docs/architecture.md` §3.
+Narrows a catalog of thousands of destinations down to a small candidate set
+topically relevant to a free-text query, optimizing recall over precision —
+the funnel's first stage. `collab_filter` (Project 2) is the other retrieval
+source scoped in parallel; `filter_constraints` (Project 3) is the layer this
+one's failures motivate.
 
-**Problem:**
-- Narrow a catalog of thousands of destinations down to a small candidate
-  set that's topically relevant to a free-text query, optimizing for recall
-  over precision (this is the first funnel stage — later stages filter and
-  rank the candidates this produces)
-- Content-based (embedding similarity) is one of several retrieval sources a
-  production system runs in parallel — `collab_filter` (Project 2) is the
-  other one scoped here
+## Preparation
 
-**Data:** [Worldwide Travel Cities (Ratings and Climate)](https://www.kaggle.com/datasets/furkanima/worldwide-travel-cities-ratings-and-climate)
-- 560 cities, each with a short text description plus structured columns
-  (budget_level, and 1-5 tag ratings: culture, adventure, nature, beaches,
-  nightlife, cuisine, wellness, urban, seclusion)
-- Download the CSV and place it at:
-  `data/Worldwide Travel Cities Dataset (Ratings and Climate).csv`
-- License: MIT (commercial use permitted, preserve the copyright notice) —
-  see `docs/roadmap-to-service.md` §Gap 8 for the caveats
-- This catalog is also the base dataset `synthetic_interactions` builds
-  synthetic users/interactions on top of, and `filter_constraints` filters
-  by its structured columns
+Check yourself against [`PREPARATION_NOTES.md`](PREPARATION_NOTES.md) — background
+concepts, not the lab's findings, so there's nothing to spoil by reading it first.
 
-**Setup:**
+- [ ] Know why unit-normalized embeddings make dot product == cosine similarity
+- [ ] Know what `recall@k` measures and why it needs a reference ranking to score against
+- [ ] Know, at a sketch level, what IVF, HNSW, and LSH each do differently from a full scan (don't need the math — just what each one is willing to trade away)
+- [ ] Know what BM25 scores (term frequency / inverse document frequency, length-normalized) and why that score isn't on the same scale as cosine similarity
+- [ ] Know what `MultipleNegativesRankingLoss` does at a sketch level — in-batch negatives, no manual negative mining — before running the fine-tune
+- [ ] Skim `filter_constraints/constraints.py`'s `LABELLED_QUERIES` — this project's eval set borrows it
+
+## Objectives
+
+- Feel where embedding similarity is good enough, and where it fails outright — a modeling-accuracy question
+- Feel when an ANN index is worth its complexity, and when brute force is fine — a computation question
+- Feel when lexical retrieval (BM25) beats semantic retrieval, and when fusing both beats either alone
+- Feel whether fine-tuning a retriever on your own click data is worth it over swapping in a bigger pretrained model
+- Practice building a quantitative eval instead of eyeballing results, and treating a small eval set's numbers as estimates with uncertainty, not exact scores
+
+## Questions to answer
+
+**Modeling accuracy:**
+1. Does it retrieve relevant results for a well-formed query?
+2. What can it never express, regardless of embedding model or `k` — and why is that a representational limit rather than something tuning fixes?
+3. How much worse is it than random guessing on exactly the queries it's blind to — and does that mean the approach is broken in general?
+
+**Computation:**
+4. At this catalog's scale, does an index even need to exist — what actually dominates per-query cost?
+5. Among IVF / HNSW / LSH, which wins on recall, latency, build time, and memory — is any one of them best on all four?
+6. Which tuning knob behaves opposite to intuition on real (clustered) data, and why does that matter for a production catalog?
+
+**Retrieval method choice:**
+7. Where does BM25 beat dense embeddings, and where does it lose, on the same probe queries as Question 2?
+8. Does RRF hybrid fusion actually beat *both* single-method retrievers, or just land between them?
+9. Does swapping the embedding model (MiniLM vs. bge-base) change the negation/numeric failure at all, or is that failure model-independent?
+10. Does fine-tuning the retriever on your own click data generalize past the query template it trained on, or does it just overfit to that template's shape?
+11. When two retrievers' scores differ by a few points on 15 labelled queries, is that a real difference or noise?
+
+**Before you touch the code, write down a guess for three of these** — the
+catalog size where an index first beats brute force end-to-end; whether
+embedding retrieval beats random ranking on the negation/numeric queries;
+and whether you expect BM25 to handle "no nightlife" any better or worse
+than embeddings do, and why. Nothing here checks that guess for you; that's
+the point of writing it down somewhere else first.
+
+## Background
+
+*Definitions and equations live in [`PREPARATION_NOTES.md`](PREPARATION_NOTES.md) — this is just orientation.*
+
+- **Catalog:** [Worldwide Travel Cities (Ratings and Climate)](https://www.kaggle.com/datasets/furkanima/worldwide-travel-cities-ratings-and-climate),
+  560 cities with a text description plus `budget_level` and nine 1-5 tag
+  ratings (culture, adventure, nature, beaches, nightlife, cuisine, wellness,
+  urban, seclusion). Download it, then save/rename it to **`data/cities.csv`**
+  — that's the exact path `content_filter.py`'s `DATA_PATH` reads; the
+  original Kaggle filename won't be found.
+- **Embedding models:** two are cached — `all-MiniLM-L6-v2` (384-dim) and
+  `BAAI/bge-base-en-v1.5` (768-dim, asymmetric — see `QUERY_INSTRUCTION`) —
+  as `data/description_embeddings*.npy`. `retriever_eval.py` auto-detects
+  every cache it finds, so a third model is just: point `MODEL_NAME` at it,
+  run once, re-run the eval.
+- **ANN candidates** (all via `faiss`, so no library-quality confound):
+
+  | Method | Searches | Knob |
+  |---|---|---|
+  | IVF | only the `nprobe` nearest of `nlist` pre-built clusters | `nlist`, `nprobe` |
+  | HNSW | a greedy walk of a multi-layer neighbor graph | `efConstruction`, `efSearch` |
+  | LSH | only the query's own hash bucket | number of hash bits |
+
+- **BM25** ranks by shared, statistically-rare vocabulary — no meaning, no
+  vectors. **RRF** fuses BM25 with dense retrieval by rank position, not raw
+  score, since the two scores aren't on a comparable scale.
+- **Vocabulary:** `recall@k` / `MRR` — see PREPARATION_NOTES.md; p50/p95 =
+  median/tail latency; a bootstrap CI estimates how much a metric would
+  wobble on a different sample of queries the same size.
+- **Terminology:** this project is semantic search (query → items), not
+  "content-based filtering" in the classic recsys sense (liked items → a
+  user profile → similar items, no query). Both get called "content-based"
+  loosely — know which one you mean.
+
+## Procedure
+
+**Setup** (run from inside this directory; the venv is shared across all
+three `candidate_generation` projects, so skip the first two lines if you
+already created one for another):
 ```
-pip install sentence-transformers numpy
+python3 -m venv ../.venv               # once, from anywhere in candidate_generation/
+source ../.venv/bin/activate           # re-run this in every new shell
+pip install -r ../../requirements.txt
 ```
+System Python won't have these packages, and on many systems `pip install`
+outside a venv fails outright (externally-managed-environment) — this isn't
+optional setup, it's the actual first step.
 
-**Usage:**
-```
-python3 content_filter.py "your travel query"
-python3 content_filter.py "your travel query" -k 10   # return top 10 instead of top 5
-python3 content_filter.py                              # prompts for a query interactively
+**Part a — sanity check.** Run `python3 content_filter.py "<a query of your
+own>"` a few times. Do the returned cities look topically plausible to you?
 
-python3 batch_test.py                                  # fixed probe queries, all failure modes
-python3 ann_benchmark.py                               # the full ANN sweep (~25 min, writes a CSV)
-python3 ann_benchmark.py --max-size 10000              # quick version
-python3 relevance_eval.py                              # recall/precision/ndcg vs. tag-grounded ground truth
-```
-- First run embeds all 560 descriptions with `all-MiniLM-L6-v2` and caches
-  the result to `data/description_embeddings.npy`; later runs load the
-  cache instead of re-embedding
-- `python3 batch_test.py` runs a fixed set of test queries (see below) and
-  prints results for all of them in one pass — no arguments needed
+**Part b — probe the failure modes.** Run `python3 batch_test.py`. It prints
+three grouped query sets side by side:
+- Paraphrase stability — do different phrasings of one intent return
+  overlapping cities?
+- Negation — does "no nightlife" suppress nightlife-heavy results, or does
+  mentioning nightlife at all pull them back in regardless of stated polarity?
+- Numeric constraints — can it reason about "under $50 a day" or "July above
+  30°C" at all, given the descriptions never state either value?
 
-**Algorithms to compare:**
-- Brute-force dot product over the full embedding matrix — **done**, this is
-  what `content_filter.py` currently does (embeddings are unit-normalized,
-  so dot product == cosine similarity)
-- FAISS IVF (inverted-file index) — **done** (`ann_benchmark.py`)
-- HNSW (hierarchical navigable small world graph) — **done**
-- LSH (locality-sensitive hashing) — **done**
-- All three come from `faiss` (`IndexIVFFlat` / `IndexHNSWFlat` / `IndexLSH`),
-  so the comparison isn't confounded by three libraries' differing quality
-- At 560 items brute force is already instant; the point of building the ANN
-  variants is to feel their recall/latency tradeoff and index-build cost,
-  not because this dataset needs them
+Record what you observe for each, against your Question 1/2 answers.
 
-**Knobs to tune:**
-- `nlist` / `nprobe` (IVF)
-- `M` / `efConstruction` / `efSearch` (HNSW)
-- Embedding model choice (`all-MiniLM-L6-v2` vs. a larger sentence-transformer)
+**Part c — quantify it.** Run `python3 relevance_eval.py`. It scores
+embedding retrieval against a `random` baseline, using `filter_constraints`'s
+`LABELLED_QUERIES` as ground truth, at k ∈ {5, 10, 20, 50} on hit_rate,
+recall, precision, and ndcg. Where does embedding retrieval beat random?
+Where doesn't it, and does that match what Part b predicted?
 
-**What `batch_test.py` surfaces:** runs grouped queries and prints results
-for each so failure modes are visible side by side, not just described:
-- **Paraphrase stability** — do different phrasings of the same intent
-  ("relaxing beach vacation" vs. "chill seaside getaway") return overlapping
-  cities? Measures result-set overlap directly.
-- **Negation** — "quiet town, definitely no nightlife" tends to still surface
-  nightlife-heavy cities, because embeddings conflate "no nightlife" with
-  "vibrant nightlife" (both mention nightlife). This is the motivating
-  example for `filter_constraints` (Project 3).
-- **Numeric constraints** — "under $50 a day" and "average July temperature
-  above 30°C" aren't reasoned about at all; embeddings have no notion of
-  thresholds. Another motivating example for `filter_constraints`.
+**Part d — benchmark the indexes.** Run `python3 ann_benchmark.py
+--max-size 10000` (quick; the full sweep to 1M takes ~25 min via
+`ann_benchmark.py` with no flag). For each of brute force / IVF / HNSW / LSH,
+record recall@10, p50/p95 latency, build time, and memory.
 
-## Experiment
+**Part e — find the crossover.** Query embedding has a fixed cost per call —
+time it. Using that plus Part d's numbers, at what catalog size does an
+index's *end-to-end* latency (embedding + search) first beat brute force's?
+Does it match your pre-registered guess?
 
-**Setup:** 560 city descriptions embedded with `all-MiniLM-L6-v2`
-(384-dim, unit-normalised), so dot product == cosine. Brute force is the
-reference: its exact top-k *is* the ground truth the ANN variants are scored
-against.
+**Part f — the tuning trap.** Sweep HNSW's `efConstruction` (e.g. 40 vs. 200)
+at a fixed `efSearch`, on the same corpus size. Does higher `efConstruction`
+always improve recall? If it doesn't, what does that tell you about the
+assumption "more graph-building effort is never worse," and why might a
+catalog of real cities-by-type break that assumption where uniformly random
+vectors wouldn't?
 
-**Conditions:** brute force · FAISS IVF (sweep `nlist`, `nprobe`) · HNSW
-(sweep `M`, `efConstruction`, `efSearch`) · LSH (sweep bits, tables).
+**Part g — add the lexical baseline.** Run `python3 bm25_search.py "<query>"`
+on a few of Part b's probe queries. Does BM25 fall into the same negation
+trap embeddings do ("no nightlife" still matching on "nightlife")? Why might
+a term-frequency method fail the same way as a meaning-based one here, or
+differently?
 
-**Metrics:** recall@10 against exact brute-force top-10; query latency p50/p95;
-index build time; index memory.
+**Part h — fuse them.** Run `python3 hybrid_search.py "<query>"`, then
+`python3 retriever_eval.py --k-values 10 --n-bootstrap 200` for a quick pass
+(drop both flags for the full run) to score embedding / BM25 / hybrid /
+random side by side, with 95% CIs. Does hybrid actually beat *both*
+single-method retrievers on any metric, or just land between them?
 
-**Interpretation:** at 560 items brute force is expected to win outright —
-which makes the *crossover point* the actual question, not the ranking at this
-size. Find it by replicating the catalog to ~10k / 100k / 1M synthetic items
-(perturbed copies of the real embeddings) and re-running the sweep, then report
-the catalog size at which each index overtakes brute force on latency at
-recall@10 ≥ 0.95. That extrapolation is what tells Phase 2 whether per-city
-POI retrieval needs an index.
+**Part i — swap the embedding model.** `retriever_eval.py` picks up every
+`data/description_embeddings*.npy` cache automatically. If both MiniLM's and
+bge-base's are cached (or you generate a second one by pointing
+`content_filter.MODEL_NAME` elsewhere and running once), compare them
+directly. Does the negation/numeric failure from Part b change at all with a
+bigger or different model?
 
-## Results — retrieval quality
+**Part j — fine-tune the retriever.** Needs `synthetic_interactions`'s data
+generated first (`cd ../../synthetic_interactions && python3 generate.py`,
+skip if you already did this for `collab_filter`). Run
+`python3 finetune_retriever.py --max-pairs 500 --epochs 1` for a quick pass
+(drop both flags for the full run — expect roughly 10-15 minutes on a
+default CPU with the ~100k click/save pairs this generates, though hardware
+varies enough that this is a ballpark, not a promise; the quick pass runs in
+seconds). It prints ID (held-out session-query) and OOD (`LABELLED_QUERIES`)
+scores before and after fine-tuning. Before you look at the OOD numbers:
+given `sessions.csv`'s query template never contains negation or a numeric
+threshold, what's your prediction for the OOD delta? Did fine-tuning move
+the ID score, the OOD score, both, or neither?
 
-- Brute force returns topically sound candidates: paraphrases of one intent
-  ("relaxing beach vacation" / "chill seaside getaway") return heavily
-  overlapping sets.
-- Negation fails outright — *"quiet town, definitely no nightlife"* still
-  surfaces nightlife-heavy cities.
-- Numeric constraints are not reasoned about at all — *"under $50 a day"*,
-  *"July average above 30°C"*.
+## Deliverables
 
-`filter_constraints` (Project 3) has since quantified this: **79% of the
-unfiltered top-10 violates the query's own stated constraint**, and for *"quiet
-town, definitely no nightlife"* it is 10 out of 10.
+1. Your own answer to each of the eleven questions above, in your own numbers
+2. The recall/p50/p95/build/memory table for brute force vs. IVF vs. HNSW vs.
+   LSH, at whatever sizes you ran
+3. The crossover catalog size you found in Part e, and whether it matched
+   your pre-registered guess
+4. One paragraph on the Part f result and what it implies about tuning ANN
+   indexes on non-random, clustered data
+5. A one-line recommendation: which index would you reach for by default,
+   and under what condition would you reach for a different one instead
+6. The embedding / BM25 / hybrid comparison table from Part h, with CIs, and
+   a note on whether any observed difference actually clears the CI overlap
+7. Your embedding-model comparison from Part i (if you ran a second model),
+   and whether it changed the negation/numeric failure
+8. Before/after fine-tuning numbers from Part j on both ID and OOD, and your
+   explanation for the gap (or lack of one) between them
+9. One paragraph distinguishing what this project builds from "content-based
+   filtering" in the classic recsys sense, and why the distinction matters
+   when someone asks you about it
 
-## Results — relevance eval (tag-grounded ground truth)
+## Optional / stretch (not built here)
 
-`relevance_eval.py` puts a number on the above using deterministic ground
-truth instead of eyeballing: for each of `filter_constraints`'s
-`LABELLED_QUERIES`, "relevant" = every catalog city satisfying that query's
-hand-labelled predicates (e.g. `nightlife<=2` for *"quiet town, definitely no
-nightlife"*). This only grades the tag/budget/temperature semantics those
-predicates capture, not free-text nuance the catalog has no column for (e.g.
-"romantic") — `synthetic_interactions`' clicks can't fill that gap either,
-since they're generated from the same 9 tag columns, not from description text.
+Marked optional because they're real gaps but not essential to the six core
+questions above — worth knowing they exist, not worth blocking on:
 
-| model | k | hit_rate | recall | precision | ndcg |
-|---|---|---|---|---|---|
-| embedding | 5 | 0.533 | 0.012 | 0.240 | 0.220 |
-| embedding | 10 | 0.667 | 0.018 | 0.207 | 0.204 |
-| embedding | 20 | 0.933 | 0.041 | 0.227 | 0.221 |
-| embedding | 50 | 0.933 | 0.109 | 0.224 | 0.233 |
-| random | 5 | 0.800 | 0.013 | 0.320 | 0.312 |
-| random | 10 | 0.867 | 0.022 | 0.267 | 0.276 |
-| random | 20 | 0.933 | 0.040 | 0.263 | 0.270 |
-| random | 50 | 0.933 | 0.097 | 0.259 | 0.270 |
+- **Quantization/compression** (product quantization / IVFPQ, int8, or
+  Matryoshka-style truncated embeddings) — the option that would shrink
+  memory footprint without LSH's recall collapse. Would mean adding a PQ arm
+  to `ann_benchmark.py`.
+- **Filtered vector search as its own experiment** — `filter_constraints`
+  (Project 3) explores whether filtering after retrieval can ever fully
+  recover, given a fixed candidate pool (its Procedure Part e). If the
+  answer there is "no," the production fix is pushing the filter into the
+  index itself (FAISS `IDSelector`, or partitioning by `budget_level`)
+  rather than post-filtering — not built as a dedicated ANN-level experiment
+  here.
+- **A larger hand-labelled eval set** — Part h's bootstrap CIs would shrink
+  with more than 15 labelled queries; building that set is its own
+  time investment, not a code change.
 
-**Embedding retrieval loses to random on every metric at every k.** Spot
-checking confirms it's real, not a scoring bug: top-5 for *"quiet town,
-definitely no nightlife"* is Mumbai, São Paulo, Belgrade, Tampa, Reykjavík —
-nightlife rated 3-5, the exact opposite of what was asked — and top-5 for
-*"under $50 a day"* mixes Luxury, Mid-range, and Budget cities roughly evenly,
-since price never appears in the description text at all.
+## Notes
 
-**Read this result as confirmation, not a new finding.** `LABELLED_QUERIES`
-was built specifically to probe the negation/numeric blind spots above — it's
-an adversarial set by construction, not a representative sample of "typical"
-queries. This eval quantifies exactly the gap `filter_constraints` already
-exists to close, on the same 15 queries that motivated it; it isn't evidence
-that embedding retrieval is broken in general, only that it is exactly as
-blind to negation and numeric thresholds as the qualitative check already
-showed. Relevant-set sizes range from 12 to 484 out of 560 (see
-`relevance_eval.py`'s full output) — the 484-city query (`budget <= Mid-range`,
-86% of the catalog) makes hit_rate/recall structurally close to 1.0/saturated
-for *any* ranking, embedding or random, which is why precision and ndcg are
-the more informative columns for that query specifically.
-
-## Results — ANN sweep
-
-Best config per index at each size (lowest p95 that still clears recall@10 ≥
-0.95; where nothing clears it, the highest-recall config is shown instead).
-200 queries, k=10, single-threaded search on both sides. Raw sweep in
-`../data/ann_benchmark.csv`.
-
-| n | index | config | recall@10 | p50 ms | p95 ms | build s | MB |
-|---|---|---|---|---|---|---|---|
-| 560 | brute | — | 1.000 | 0.053 | 0.061 | 0 | 0.9 |
-| 560 | ivf | nlist=16, nprobe=8 | 0.978 | 0.029 | 0.038 | 0.1 | 0.9 |
-| 560 | hnsw | M=32, efC=200, efS=16 | 0.953 | 0.025 | 0.031 | 0.0 | 0.9 |
-| 560 | lsh | nbits=512 | *0.396* | 0.031 | 0.051 | 0.4 | 0.8 |
-| 10k | brute | — | 1.000 | 1.230 | 1.597 | 0 | 15.4 |
-| 10k | ivf | nlist=256, nprobe=16 | 0.956 | 0.216 | 0.267 | 0.4 | 15.8 |
-| 10k | hnsw | M=32, efC=200, efS=16 | 0.954 | 0.058 | 0.087 | 0.7 | 18.1 |
-| 10k | lsh | nbits=512 | *0.369* | 0.069 | 0.083 | 0.4 | 1.4 |
-| 100k | brute | — | 1.000 | 12.179 | 14.838 | 0 | 153.6 |
-| 100k | ivf | nlist=1024, nprobe=8 | 0.972 | 0.204 | 0.342 | 5.1 | 156.0 |
-| 100k | hnsw | M=32, efC=40, efS=128 | 0.955 | 0.447 | 0.840 | 6.2 | 180.8 |
-| 100k | lsh | nbits=512 | *0.247* | 0.606 | 0.942 | 1.5 | 7.2 |
-| 1M | brute | — | 1.000 | 115.079 | 124.227 | 0 | 1536.0 |
-| 1M | ivf | nlist=1024, nprobe=8 | 0.986 | 1.170 | 2.173 | 63.0 | 1545.6 |
-| 1M | hnsw | M=32, efC=40, efS=1024 | 0.963 | 2.583 | 4.547 | 108.5 | 1808.1 |
-| 1M | lsh | nbits=512 | *0.134* | 5.211 | 6.141 | 11.0 | 64.8 |
-
-*Italic recall = never reached 0.95 at any config in the grid.* HNSW rows come
-from a corrected re-run (see below); brute-force rows are from the main sweep.
-
-**The pre-specified prediction was wrong.** The Interpretation above expected
-brute force to "win outright" at 560. It does not: IVF and HNSW both beat it on
-p95 even at 560 (0.038 / 0.031 ms vs 0.061 ms). Building an index is already
-"free" latency-wise at the smallest size.
-
-**But the raw crossover is the wrong question, and answering it exposed why.**
-Embedding the query costs **9.63 ms p50 / 11.17 ms p95** — a fixed toll every
-query pays before the index is ever touched. Against that, search time at small
-n is a rounding error:
-
-| n | brute end-to-end | best ANN end-to-end | speedup |
-|---|---|---|---|
-| 560 | 9.68 ms | 9.66 ms | 1.00x |
-| 10k | 10.86 ms | 9.70 ms | 1.12x |
-| 100k | 21.81 ms | 9.83 ms | 2.2x |
-| 1M | 124.71 ms | 10.80 ms | **11.6x** |
-
-**So the answer Phase 2 should use is ~100k, not 560.** Below that, an index is
-technically faster and practically pointless — at 560 it saves 30 microseconds
-on a 9.7 ms query, 0.3%. At 100k, brute-force search finally costs more than
-the embedding call and the index halves end-to-end latency; by 1M it is the
-difference between 125 ms and 11 ms. Per-city POI retrieval needs an index only
-if a city's POI count pushes the searched set toward six figures.
-
-**IVF is the one to reach for.** It clears 0.95 recall at every size, scales
-best (0.986 recall at 2.17 ms p95 at 1M — 57x faster than brute force), and
-builds in 63 s at 1M.
-
-**HNSW is fastest at small n, and loses to IVF at large n.** It is the quickest
-index at 560 and 10k (0.031 / 0.087 ms p95), but at 1M it needs `efSearch=1024`
-to reach 0.963 recall, by which point it is slower than IVF (4.55 ms vs 2.17 ms
-p95), takes longer to build (109 s vs 63 s) and uses more memory (1808 MB vs
-1546 MB). IVF wins the top end on all four axes.
-
-**A finding worth more than the ranking: raising `efConstruction` made HNSW
-*worse*, and it took a bug hunt to believe it.** The first sweep showed recall
-falling as `efSearch` rose — impossible for a correct index — which turned out
-to be two different builds being compared. Isolating it on one corpus at 100k:
-
-| efConstruction | efS=16 | efS=128 | efS=1024 | build |
-|---|---|---|---|---|
-| 40 | 0.719 | 0.955 | **0.991** | 6.2 s |
-| 200 | 0.659 | 0.781 | *0.803* | 36.2 s |
-
-Six times the build time for a permanently worse graph. The cause is the
-*corpus*, not HNSW: the scale-up perturbs 560 real vectors, producing 560 tight
-clusters, and HNSW's neighbour-diversification heuristic prunes more
-aggressively the more near-identical candidates it sees during construction —
-leaving clusters well connected internally and poorly connected to each other.
-Loosening the clusters removes the effect entirely (at noise 0.3, efC=200 scores
-0.9895 against efC=40's 0.9870 — the expected ordering, restored).
-
-Two things follow. First, the 100k/1M HNSW rows above use `efC=40` deliberately.
-Second, and more usefully: **`efConstruction` is not a "higher is better" knob on
-clustered data**, which is exactly what a real catalog of cities-by-type looks
-like. That is a tuning trap worth carrying into Phase 2, and it would have been
-invisible on uniformly random vectors.
-
-*(Raising the noise is not the fix, tempting as the clean numbers look: at 0.3
-the perturbation outweighs the unit-norm base vector roughly 6:1, so the corpus
-degenerates toward uniform random — the case this scale-up exists to avoid.)*
-
-**LSH fails, and fails worse as the catalog grows** — 0.396 recall at 560 down
-to 0.134 at 1M, at its widest setting (512 bits). Random-hyperplane LSH needs
-far more bits to preserve neighbourhoods in 384 dimensions, and by 1M it is
-also *slower* than IVF (6.1 ms vs 2.2 ms) while retrieving mostly wrong
-neighbours. Its one genuine advantage is memory: 64.8 MB at 1M against 1536 MB
-for the flat index, 24x smaller, because it stores binary codes instead of
-vectors.
-
-**ANN buys latency, not memory.** IVF and HNSW both store the full vectors
-alongside their index structures, so at 1M they cost *more* than brute force
-(1546 MB and 1808 MB vs 1536 MB). Only LSH shrinks the footprint, and it pays
-for that in recall. Shrinking memory without destroying recall means product
-quantization (IVFPQ), which this sweep did not cover.
-
-**Standing caveat:** only the first 560 vectors are real. The larger corpora are
-perturbed copies of them (Gaussian noise, renormalised), chosen because
-uniformly random 384-dim vectors are near-equidistant and would flatter every
-index. The *shape* of the tradeoff is what transfers; the absolute recall
-figures describe this synthetic distribution, not a real million-city catalog.
-
-**What the negation failure means:** it is representational, not a ranking
-wobble. "No nightlife" and "vibrant nightlife" sit close in embedding space
-because both are *about* nightlife, so no choice of `k` or embedding model
-fixes it. That is the whole justification for `filter_constraints` (Project 3)
-existing as a separate deterministic layer, and it is why the fix belongs
-outside the retriever rather than inside it.
-
-**Status:** done
-- Brute-force baseline: done
-- ANN variants (FAISS IVF, HNSW, LSH): done — `ann_benchmark.py`, swept to 1M
-- `batch_test.py`: done, the tool for eyeballing negation/numeric/paraphrase
-  failure modes
-- `relevance_eval.py`: done — recall/precision/ndcg@k against tag-grounded
-  ground truth, quantifying the negation/numeric failure modes above
-- Not covered: product quantization (IVFPQ), the one option that would cut
-  memory without LSH's recall collapse — worth a follow-up if footprint ever
-  becomes the binding constraint rather than latency.
-- Not covered: free-text nuance the catalog's tag columns don't capture (e.g.
-  "romantic", "family-friendly") — no ground truth in this repo grades that;
-  would need human-labelled or LLM-judged relevance, not tag-derived rules.
+- `content_filter.py`, `batch_test.py`, `ann_benchmark.py`, `relevance_eval.py`,
+  `bm25_search.py`, `hybrid_search.py`, `retriever_eval.py`, and
+  `finetune_retriever.py` are all implemented and runnable — this lab is
+  about running them and interpreting the output, not writing new code.
+- New dependencies beyond the original setup: `rank_bm25`, `datasets`,
+  `accelerate` (all in `scratch/requirements.txt`).
+- `finetune_retriever.py` defaults to `all-MiniLM-L6-v2` for CPU-feasible
+  training; swap `--model` for `BAAI/bge-base-en-v1.5` if you have a GPU.
+- Not built (see Optional above): quantization/compression, filtered vector
+  search as its own experiment, free-text nuance the catalog's tag columns
+  don't capture (e.g. "romantic") — no ground truth in this repo grades that.
+- A prior write-up with actual measured numbers (the original ANN sweep,
+  predating the BM25/hybrid/fine-tuning arms) exists in this file's git
+  history, if you want to check your Deliverables against it after — not
+  before.
