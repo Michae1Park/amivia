@@ -75,7 +75,7 @@ soft-penalising cannot reach zero violations at any setting.
 
 | # | Project | Layer | Status |
 |---|---------|-------|--------|
-| 10 | [intent_parsing](llm_wrapper/intent_parsing/README.md) *(optional, LLM)* | Conversation layer | Not started |
+| 10 | [intent_parsing](llm_wrapper/intent_parsing/README.md) *(optional, LLM)* | Conversation layer | In progress — schema + weak/OOD datasets built; prompting arm and a LoRA fine-tune arm scaffolded, neither run yet |
 | 11 | [response_generation](llm_wrapper/response_generation/README.md) *(optional, LLM)* | Response generation | Not started |
 | 12 | [tool_calling_agent](llm_wrapper/tool_calling_agent/README.md) *(optional, LLM)* | Agent tooling | Not started |
 
