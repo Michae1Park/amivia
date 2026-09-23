@@ -1,169 +1,152 @@
 # Project 2: Collaborative-filtering candidate retrieval
 
 Layer: candidate retrieval (collaborative filtering) — see `docs/architecture.md` §3.
+`content_filter` (Project 1) retrieves by matching a query's text to a city's
+description; this project retrieves by "travelers with taste similar to
+yours liked these other cities" — no query, no text, just the interaction
+log. The two run in parallel as separate retrieval sources.
 
-**Problem:** `content_filter` retrieves cities by matching content (descriptions)
-to a query. It has no notion of "travelers with taste similar to yours liked
-these other cities" — the other major candidate-generation signal production
-systems run in parallel with content-based retrieval.
+## Preparation
 
-**Data:** `scratch/synthetic_interactions` — synthetic users, personas, and an
-impression/click/save interaction log built on top of `content_filter`'s city
-catalog. **Built and ready** — 5,000 users, 450,852 impressions.
+Check yourself against [`PREPARATION_NOTES.md`](PREPARATION_NOTES.md) — background
+concepts, not the lab's findings, so there's nothing to spoil by reading it first.
 
-**Algorithms to compare:**
-- Matrix factorization (ALS or SVD) over the user-item interaction matrix
-- Item-based neighborhood collaborative filtering (cosine similarity over
-  co-interaction patterns)
-- Implicit-feedback Bayesian Personalized Ranking (BPR)
+- [ ] Know the difference between implicit feedback (clicks) and explicit feedback (ratings), and what "confidence" means for the former
+- [ ] Know why impressions carry no relevance signal, and what a per-user temporal holdout is
+- [ ] Know, at a sketch level, what item-kNN, SVD, ALS, and BPR each optimize (don't need the derivations — just what's different)
+- [ ] Know why `popularity`, not `random`, is the bar to beat here, and what a high popularity-correlation on top of a real win actually means
+- [ ] Know what matrix density measures, and roughly where real datasets (e.g. MovieLens) sit on it
 
-**Knobs to tune:** latent dimension, regularization strength, how implicit
-feedback (impression/click/save) is weighted vs. treated as explicit rating.
+## Objectives
 
-**Usage:**
+- Feel how differently four CF families behave on the *same* data — no
+  training loop (item-kNN) vs. reconstructing the matrix (SVD/ALS) vs.
+  optimizing ranking directly (BPR)
+- Feel the difference between "beats popularity" and "learned taste, not
+  just exposure" — and the one diagnostic that tells them apart
+- Feel how a more realistic, sparse interaction log changes which model wins
+- Practice cross-checking a hand-rolled implementation against a reference
+  library instead of trusting your own math
+
+## Questions to answer
+
+**Modeling:**
+1. Do all four models actually beat `popularity`? Is beating it enough to conclude a model "learned taste"?
+2. Which model's ranking correlates most with raw popularity, and is that a red flag or an expected byproduct of exposure-biased training data?
+3. Does confidence-weighting (graded save=2/click=1 vs. binary) change anything — for each model individually, and why or why not?
+4. A model's score can climb while it's actually collapsing onto a popularity ranking. What in the results would expose that, and what would it look like if you only checked the headline metric?
+
+**Computation & robustness:**
+5. Which model needs the least compute, and does the cheapest model also win?
+6. Does the winner at this project's default (small, dense) scale stay the winner once the log is realistically sparse?
+7. Cross-checking ALS/BPR against a reference library (`implicit`) either confirms your implementation or catches a bug. What would each outcome look like, concretely, in the numbers?
+
+**Before you touch the code, write down a guess for two of these** — which
+of the four models you expect to win at the default settings, and whether
+you expect that ranking to survive under realistic sparsity (see Part f).
+Nothing here checks that guess for you.
+
+## Background
+
+*Definitions and equations live in [`PREPARATION_NOTES.md`](PREPARATION_NOTES.md) — this is just orientation.*
+
+- **Data:** `scratch/synthetic_interactions` — synthetic users, personas, and
+  an impression/click/save log over `content_filter`'s 560-city catalog.
+  Built and ready: 5,000 users, 449,411 impressions, 2.8% click/save density.
+- **A caveat:** every item in that default log gets at least one interaction
+  — real logs (MovieLens-25M: ~0.25% density) have a long tail of near-cold
+  items this doesn't. See Part f.
+- **Four models** (`models.py`, all hand-rolled in NumPy/SciPy):
+
+  | Model | Optimizes | Training |
+  |---|---|---|
+  | item-kNN | co-interaction cosine similarity | none — one similarity matrix |
+  | SVD | matrix reconstruction error | one truncated-SVD solve |
+  | ALS | weighted reconstruction error, confidence-scaled | alternating closed-form solves |
+  | BPR | pairwise ranking order | SGD over sampled triples |
+
+- **Vocabulary:** `recall@k` / `NDCG@k` / `hit_rate@k` — graded relevance
+  (save=2, click=1); `pop_rho` = Spearman correlation between a model's
+  ranking and raw popularity (§8 of the prep notes) — the diagnostic that
+  separates "learned taste" from "relearned what's popular."
+
+## Procedure
+
+**Setup** (skip the venv creation if you already made one for `content_filter`
+or `filter_constraints` — it's shared across all three):
 ```
-python3 sweep.py                  # the full grid (~20 min), writes data/cf_sweep.csv
-python3 sweep.py --quick          # one config per model
-python3 verify_vs_implicit.py     # cross-check ALS/BPR against the `implicit` library
-
-cd ../../eval && python3 run_eval.py --cf     # score them beside the baselines
+python3 -m venv ../.venv               # once, from anywhere in candidate_generation/
+source ../.venv/bin/activate           # re-run this in every new shell
+pip install -r ../../requirements.txt
 ```
 
-**Implementation:** all four are hand-rolled in NumPy/SciPy (`models.py`) —
-the point of the project is to feel how they differ, which reading library call
-signatures does not teach. Each implements the eval harness's
-`.recommend(user_id, k)` contract plus `.scores(user_id)` over the full catalog,
-which the popularity diagnostic needs.
+**Before Part a: generate the data.** This project's data isn't shipped in
+the repo (`scratch/**/data/` is gitignored — see `.gitignore`'s comment on
+that line). If `../../synthetic_interactions/data/interactions.csv` doesn't
+exist yet, `sweep.py` will fail on a plain file-not-found with no other clue
+why. Generate it once, with defaults:
+```
+cd ../../synthetic_interactions && python3 generate.py && cd ../collab_filter
+```
 
-Two implementation notes worth keeping:
+**Part a — sanity run.** `python3 sweep.py --quick` (one config per model,
+seconds). Do all four already beat `popularity` at a single arbitrary config?
 
-- **The interaction matrix dedupes to the strongest grade per (user, item)**,
-  matching `eval/data.py`'s `max(cur, grade)`. Summing repeat events and
-  clipping instead would score two clicks in separate sessions identically to a
-  save — inventing signal that isn't in the log.
-- **ALS and BPR are cross-checked against `implicit`** (`verify_vs_implicit.py`)
-  rather than trusted. A sign error in a BPR gradient or a mis-derived ALS normal
-  equation still produces plausible numbers, and this project's deliverable is an
-  interpretation — a wrong one is worse than none.
+**Part b — the full sweep.** `python3 sweep.py` (~20 min, writes
+`data/cf_sweep.csv`). For each model, note its best NDCG@10 config and
+whether it clears `popularity`. Which model wins outright?
 
-## Experiment
+**Part c — read the popularity diagnostic.** For your Part b winner, check
+its `pop_rho` column. High correlation *and* a big margin over `popularity`
+means real personalization on top of a popularity prior. Now run
+`python3 sweep.py --models als` and scan its printed rows for the highest
+`reg` value (the full grid already sweeps ALS's regularization up to 100) —
+find the config that "wins" on NDCG while `pop_rho` sits near 1.0. What does
+that combination actually mean?
 
-**Setup:** `synthetic_interactions` (5,000 users, 450,852 impressions), per-user
-temporal holdout via `eval/`. Graded relevance: save=2, click=1.
+**Part d — the confidence-weighting knob.** Compare `--weightings binary`
+against the default (graded) for each model. Which models move, which
+don't, and for BPR specifically — why would you expect zero movement before
+you even run it (see prep notes §6)?
 
-**Conditions:** ALS · SVD · item-kNN (cosine over co-interaction) · BPR.
-Sweep latent dim {16, 32, 64, 128} and regularisation; for implicit feedback
-compare binary (click∪save) against confidence-weighted (save=2, click=1).
+**Part e — cross-check.** Run `python3 verify_vs_implicit.py`. Does it
+confirm your ALS/BPR implementations agree with the reference library's
+ranking, or does it surface a discrepancy worth chasing down?
 
-**Metrics:** recall@k, NDCG@k, hit-rate@k for k ∈ {5, 10, 20}, against
-`random` / `popularity` / `oracle_persona`.
+**Part f — realistic sparsity.** The Results so far come from a small, dense
+catalog where nothing is ever truly cold. Build a sparser variant and re-run:
+```
+cd ../../synthetic_interactions
+python3 scale_catalog.py --n-items 5000                                    # perturbs the 560 real cities up to 5,000 synthetic ones
+python3 generate.py --catalog data/catalog_5000.csv --out-dir data/sparse_5000 \
+    --n-users 5000 --popularity-skew 1.5                                   # same user count, ~9x sparser log
+cd ../collab_filter
+python3 sparsity_sweep.py --k 10 \
+    --variant "dense (560)":../../synthetic_interactions/data:../data/cities.csv \
+    --variant "sparse (5000)":../../synthetic_interactions/data/sparse_5000:../../synthetic_interactions/data/catalog_5000.csv
+```
+Try more `--n-items` sizes (2000, 20000, ...) for more points on the curve.
+Hyperparameters are held fixed across densities on purpose (see
+`sparsity_sweep.py`'s docstring) — this isolates the density effect rather
+than re-tuning at each point. Does your Part b winner stay the winner? Does
+any model's `pop_rho` climb toward 1.0 as density drops — the same collapse
+pattern from Part c, now driven by sparsity instead of over-regularization?
 
-**Interpretation:** the bar is `popularity`, not `random`. Because impressions
-are popularity-sampled, CF trained on this log may simply *relearn popularity*
-— so also report Spearman correlation between each model's per-user ranking
-and the global popularity ranking. High correlation plus a small NDCG gain
-means it learned exposure, not taste, and should be reported as such.
+## Deliverables
 
-## Results
+1. Your own answer to each of the seven questions above, in your own numbers
+2. The full-grid table from Part b: best config per model, against `random`/`popularity`
+3. The config you found in Part c that "wins" on NDCG while its `pop_rho` gives away that it's collapsed toward popularity, and why that combination is misleading if read from NDCG alone
+4. Your Part d comparison, and an explanation for BPR's result specifically
+5. What Part e's cross-check told you — agreement, or a bug worth fixing
+6. The dense-vs-sparse comparison table from Part f, and whether your Part b winner survived
+7. One paragraph: which of the four models would you reach for first on a real, sparse, large-catalog dataset, and why that might differ from your Part b answer
 
-112 configs swept. Best per model by NDCG@10, against the harness baselines
-(4,675 test users with ≥1 held-out positive). Raw grid in `data/cf_sweep.csv`;
-reproduce the table below with `cd ../../eval && python3 run_eval.py --cf`.
+## Notes
 
-| model | best config | NDCG@5 | NDCG@10 | hit@10 | recall@10 | pop ρ |
-|---|---|---|---|---|---|---|
-| random | — | 0.0048 | 0.0080 | 0.0456 | 0.0116 | — |
-| popularity | — | 0.0457 | 0.0580 | 0.2535 | 0.0796 | — |
-| oracle_persona | — | 0.0276 | 0.0380 | 0.1807 | 0.0518 | — |
-| **item_knn** | n_neighbors=560, confidence | **0.0774** | **0.0926** | **0.3594** | **0.1180** | 0.637 |
-| bpr | dim=64, reg=0.1 | 0.0716 | 0.0859 | 0.3416 | 0.1117 | 0.748 |
-| als | dim=16, reg=10, α=1, binary | 0.0628 | 0.0768 | 0.3151 | 0.0990 | 0.347 |
-| svd | dim=16, confidence | 0.0581 | 0.0712 | 0.2948 | 0.0931 | 0.288 |
-
-**All four clear the real bar.** `popularity`, not `random`, is what counts here,
-and every model beats it — item-kNN by 60% on NDCG@10, BPR by 48%, ALS by 32%,
-SVD by 23%. Given the exposure bias documented in `eval/README.md`, that was not
-a given: this log's held-out positives track *what was shown*, and a model that
-merely relearned exposure would land on top of `popularity`, not well past it.
-
-**They also beat `oracle_persona` — by a lot — and that is the interesting part.**
-The oracle ranks by the exact affinity formula that generated the clicks and
-still scores 0.0380, less than half item-kNN's 0.0926. There is no contradiction:
-the oracle ranks by *latent taste* over the whole catalog, including cities a
-user was never shown and therefore could never have clicked. CF learns from the
-log, so it inherits the log's exposure shape and predicts taste *within the set
-users actually see*. On an exposure-biased test set that is the winning strategy,
-and it is a compact illustration of why offline recsys numbers flatter models
-trained on logged feedback.
-
-**The simplest model wins.** Item-kNN has no training loop and no latent space —
-a 560×560 cosine similarity matrix, built in well under a second — and it beats
-all three factorization models. Its best setting is `n_neighbors=560`, i.e. no
-truncation at all: pruning to each item's strongest neighbours only ever hurt.
-At 560 items and 64k interactions there is not enough data for a learned latent
-space to pay for itself, which is worth remembering before reaching for a
-two-tower model in Project 6.
-
-**Where the popularity diagnostic earns its keep.** The pre-specified reading —
-high correlation plus a small NDCG gain means it learned exposure, not taste —
-applies almost perfectly to one config, and it is an ALS one:
-
-| ALS (dim=16, binary) | NDCG@10 | pop ρ |
-|---|---|---|
-| reg=1 | 0.0718 | 0.282 |
-| **reg=10** | **0.0768** | 0.347 |
-| reg=100, α=1 | 0.0588 | **0.949** |
-
-At `reg=100` ALS scores 0.0588 against `popularity`'s 0.0580 — a 1.4% "win" — with
-a 0.949 rank correlation to the global popularity ordering. It did not learn
-taste; over-regularisation collapsed it onto a near-rank-1 solution that *is*
-popularity. Judged on NDCG alone it looks like a modest success. The correlation
-column is what exposes it, which is the entire reason the experiment
-pre-specified that column.
-
-Read the same way, the genuine winners are honest but not innocent: item-kNN at
-ρ=0.637 and BPR at ρ=0.748 are substantially popularity-correlated while beating
-popularity by 48–60%. They are doing real personalisation *on top of* a strong
-popularity prior, not instead of one. ALS at ρ=0.347 is the least
-popularity-driven of the four and pays for it in raw score — the same
-exposure-bias tax `oracle_persona` pays.
-
-**The confidence-weighting knob does almost nothing.** Graded (save=2, click=1)
-vs. binary (click∪save) moves NDCG@10 by 2% for item-kNN (0.0926 vs 0.0906),
-0.3% for SVD, and not at all for ALS. That is a clean negative result on one of
-the three knobs this project set out to test: with only two grade levels and
-saves making up ~14% of clicks, the graded matrix is nearly the binary one.
-Distinguishing implicit-feedback strength would need the richer signal
-`synthetic_interactions` already logs — `dwell_seconds`, `itinerary_add`, and
-the explicit `not_interested` negative — none of which the standard formulations
-here consume.
-
-**BPR ignores the knob entirely, by construction.** Standard BPR samples
-(user, positive, negative) triples from the *positions* of observed interactions
-and never reads their values, so binary and confidence weighting produce a
-bit-identical model. The sweep runs it once and labels the weighting `either`
-rather than printing duplicate rows that would look like independent evidence.
-
-**Low latent dimension wins throughout** — ALS and SVD both peak at dim=16, BPR
-at 64, with 128 worse across the board. 64k nonzeros over 560 items does not
-support much capacity.
-
-**What the `implicit` cross-check actually caught.** Ranking agreement with the
-reference library is moderate (Spearman ρ 0.45 for ALS, 0.50 for BPR; top-10
-overlap 0.46 / 0.31) — two valid solutions differing in the ranking tail, not a
-broken gradient, confirmed by NDCG tracking within a few percent across four
-hyperparameter settings. But running it surfaced something the sweep alone would
-have hidden: `implicit` scored far better at `reg=10` than anything in the
-original grid, which topped out at `reg=1`. ALS was simply under-regularised,
-and on the first pass it scored *below* `popularity` and would have been written
-up as the weakest model. The grid now runs to `reg=100`. **The check paid for
-itself not by finding a bug, but by catching a false negative.**
-
-**Standing caveat:** this is synthetic data. It validates that the four
-implementations work and that the diagnostics discriminate; it says nothing
-about how real travellers behave. In particular the persona structure is
-generated, so "CF recovers taste structure here" does not imply it would recover
-anything on a real log of this size.
-
-**Status:** done — `models.py`, `sweep.py`, `verify_vs_implicit.py` written,
-full grid run, wired into `eval/run_eval.py --cf`.
+- `models.py`, `sweep.py`, `verify_vs_implicit.py`, `scale_catalog.py` (in
+  `synthetic_interactions`), and `sparsity_sweep.py` are all implemented and
+  runnable.
+- A prior write-up with actual measured numbers (the dense-catalog sweep,
+  predating the sparsity extension) exists in this file's git history, if
+  you want to check your Deliverables against it after — not before.
