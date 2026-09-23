@@ -68,6 +68,29 @@ could solve by memorizing:
 | `popularity_skew` | how much popularity dominates over personalization signal — raise it to see whether a model just learns to recommend popular items |
 | `click_threshold`, `save_threshold` | overall signal sparsity — how rare are positives |
 | `random_seed` | reproducibility |
+| catalog size (via `scale_catalog.py`, below) | the knob that actually gets close to real-world sparsity — see next section |
+
+### Catalog scale, and why it matters more than the knobs above
+
+The default catalog is the 560 real cities, and at 5,000 users every one of
+them gets at least one click or save — 2.8% matrix density, no cold items at
+all. Real interaction logs (MovieLens-25M: ~0.25% density) are sparse mainly
+because the **catalog** is huge, not because any of the knobs above were
+tuned toward scarcity. `scale_catalog.py` perturbs the 560 real cities up to
+a larger synthetic catalog (same idiom `content_filter/ann_benchmark.py` uses
+to scale to 1M for its ANN sweep — perturbed real vectors, not uniform random
+ones), so `generate.py` can be pointed at it to produce a log with genuinely
+cold items and a long popularity tail:
+
+```
+python3 scale_catalog.py --n-items 5000
+python3 generate.py --catalog data/catalog_5000.csv --out-dir data/sparse_5000 \
+    --n-users 5000 --popularity-skew 1.5
+```
+
+At 5,000 items this drops density to ~0.29% (MovieLens-25M range) with ~38%
+of items getting zero training interactions — `collab_filter/sparsity_sweep.py`
+is what consumes a variant like this; see that project's README.
 
 ## Status
 
